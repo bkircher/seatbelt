@@ -29,6 +29,12 @@ sb --allow-env=ATLASSIAN_API_TOKEN pi
 sb --allow-env ATLASSIAN_API_TOKEN --allow-env JIRA_API_TOKEN pi
 ```
 
+To use a profile that is not installed under `~/.config/sb`, pass it explicitly:
+
+```bash
+sb --profile ./default-profile.sb pi
+```
+
 ## The problem pi-seatbelt fixes
 
 There are some sandbox extensions written for pi, but they are hard to

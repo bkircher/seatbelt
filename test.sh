@@ -9,12 +9,27 @@ PROJECT_DIR="$(pwd -P)"
 TMP_DIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
 TEST_ID="pi-seatbelt-test-$$"
 
-mkdir -p "$HOME_DIR/.cache" "$HOME_DIR/.codex/skills"
+ensure_fixture_dir() {
+    local path="$1"
+
+    if [[ -d "$path" ]]; then
+        return 0
+    fi
+
+    if mkdir -p "$path" 2>/dev/null; then
+        return 0
+    fi
+
+    echo "error: required test fixture directory is not available: $path" >&2
+    echo "When running test.sh inside the sandbox, create it once outside the sandbox first." >&2
+    exit 1
+}
+
+ensure_fixture_dir "$HOME_DIR/.cache"
+ensure_fixture_dir "$HOME_DIR/.codex/skills"
 
 PROJECT_TEST_DIR="$PROJECT_DIR/$TEST_ID-dir"
-WRAPPER_HOME="$TMP_DIR/$TEST_ID-home"
-mkdir -p "$PROJECT_TEST_DIR" "$WRAPPER_HOME/.config/sb"
-cp "$PROFILE" "$WRAPPER_HOME/.config/sb/default-profile.sb"
+mkdir -p "$PROJECT_TEST_DIR"
 
 PROJECT_WRITE="$PROJECT_DIR/$TEST_ID"
 CACHE_WRITE="$HOME_DIR/.cache/$TEST_ID"
@@ -47,7 +62,6 @@ cleanup() {
         "$PROJECT_KEY_DENIED"
     rmdir "$PI_SETTINGS_LOCK_DIR" 2>/dev/null || true
     rmdir "$PI_AUTH_LOCK_DIR" 2>/dev/null || true
-    rm -rf "$WRAPPER_HOME"
     rmdir "$PROJECT_TEST_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -123,12 +137,12 @@ assert_denied "denies read of ~/.zshenv" /bin/cat "$HOME_DIR/.zshenv"
 assert_wrapper_env() {
     local output
 
-    if ! output="$(HOME="$WRAPPER_HOME" \
-        ALLOWED_ONE="one" \
+    if ! output="$(ALLOWED_ONE="one" \
         ALLOWED_TWO="two" \
         SECRET_SHOULD_NOT_PASS="hidden" \
         TEST_BASE_URL="https://example.invalid" \
         "$PROJECT_DIR/sb" \
+        --profile "$PROFILE" \
         --allow-env=ALLOWED_ONE \
         --allow-env ALLOWED_TWO \
         /usr/bin/env 2>/dev/null)"; then
@@ -148,7 +162,7 @@ assert_wrapper_env() {
 }
 
 assert_wrapper_missing_env_denied() {
-    if (unset MISSING_ALLOWED_ENV; HOME="$WRAPPER_HOME" "$PROJECT_DIR/sb" --allow-env=MISSING_ALLOWED_ENV /usr/bin/true >/dev/null 2>&1); then
+    if (unset MISSING_ALLOWED_ENV; "$PROJECT_DIR/sb" --profile "$PROFILE" --allow-env=MISSING_ALLOWED_ENV /usr/bin/true >/dev/null 2>&1); then
         echo "not ok - wrapper rejects missing allowed env" >&2
         exit 1
     else

@@ -6,10 +6,13 @@
 # Options:
 #   --allow-env=NAME   Pass through one additional environment variable
 #   --allow-env NAME   Same
+#   --profile=PATH     Use an explicit sandbox profile path
+#   --profile PATH     Same
 #
 # Examples:
 #   sb npm install                         # sandbox with a sanitized environment
 #   sb --allow-env=ATLASSIAN_API_TOKEN pi  # pass through one additional variable
+#   sb --profile ./default-profile.sb pi   # use a profile from the project
 #
 # Policy (defined in default-profile.sb):
 #   - Writes are blocked outside the project directory, ~/.cache/, ~/.codex/skills/, and temp directories.
@@ -21,6 +24,7 @@
 set -euo pipefail
 
 ALLOWED_ENV=()
+PROFILE=""
 
 # Parse sb-specific flags before the command.
 while [[ $# -gt 0 ]]; do
@@ -33,20 +37,32 @@ while [[ $# -gt 0 ]]; do
             fi
             ALLOWED_ENV+=("$2")
             shift 2 ;;
+        --profile=*) PROFILE="${1#*=}"; shift ;;
+        --profile)
+            if [[ $# -lt 2 ]]; then
+                echo "error: --profile requires a sandbox profile path" >&2
+                exit 1
+            fi
+            PROFILE="$2"
+            shift 2 ;;
         --) shift; break ;;
         -h|--help)
             echo "Usage: sb [options] <command> [args...]"
             echo "Options:"
             echo "  --allow-env=NAME   Pass through one additional environment variable"
             echo "  --allow-env NAME   Same"
+            echo "  --profile=PATH     Use an explicit sandbox profile path"
+            echo "  --profile PATH     Same"
             exit 0 ;;
         -*) echo "error: unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
     esac
 done
 
-# Find the profile in the home directory.
-PROFILE="${HOME}/.config/sb/default-profile.sb"
+# Find the profile in the home directory unless an explicit one was provided.
+if [[ -z "$PROFILE" ]]; then
+    PROFILE="${HOME}/.config/sb/default-profile.sb"
+fi
 
 if [[ ! -f "$PROFILE" ]]; then
     echo "error: sandbox profile not found: ${PROFILE}" >&2
