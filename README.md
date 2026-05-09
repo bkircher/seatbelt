@@ -9,8 +9,10 @@ your secrets or write outside your project, even if you run it with
 
 ## Install
 
-Just symlink or copy `sb` into `$PATH` and `default-profile.sb` into your
-`~/.config` directory, respectively. Or put them wherever you prefer.
+Just symlink or copy `sb` into `$PATH` and `default-profile.sb` to
+`~/.config/sb/default-profile.sb`, respectively. Or put them wherever you
+prefer. Before using it, review and customize the profile for your machine and
+workflow.
 
 ## Usage
 
