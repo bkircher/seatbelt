@@ -1,0 +1,157 @@
+;; default-profile.sb - Default Seatbelt profile for macOS.
+;;
+;; Policy:
+;;   - Start from deny-default.
+;;   - Reads:
+;;     - Allow reads globally.
+;;     - Deny reads in /Users except explicit exceptions.
+;;   - Writes:
+;;     - Allow writes only to explicit paths.
+;;
+;; Read model:
+;;   - Reads outside /Users remain allowed, so system tools keep working.
+;;   - Reads inside /Users are blocked unless they match one of the exceptions.
+;;   - Metadata reads of /Users and the home directory itself remain allowed so
+;;     runtimes can resolve real paths without granting directory listing access.
+;;
+;; Write model:
+;;   - Writes are denied by default and only allowed to explicitly listed paths.
+;;   - Writes are allowed to the project directory, ~/.cache,
+;;     ~/.codex/skills, Pi lock directories, and temporary directories.
+;;   - Writes to sensitive project files remain denied even inside the project
+;;     directory: .env, .env.*, .envrc, *.pem, and *.key.
+;;
+;; Parameters (injected by wrapper):
+;;   _HOME         - user home directory
+;;   _PROJECT_DIR  - resolved project working directory
+;;   _TMPDIR       - macOS per-user temp directory
+
+(version 1)
+(deny default)
+
+;; ---------------------------------------------------------------------------
+;; Process and system essentials
+;; ---------------------------------------------------------------------------
+(allow process-exec)
+(allow process-fork)
+(allow process-info*)
+(allow signal)
+(allow mach*)
+(allow sysctl*)
+(allow ipc-posix-shm*)
+(allow ipc-posix-sem*)
+(allow iokit-open)
+(allow system-socket)
+(allow system-fsctl)
+(allow pseudo-tty)
+(allow user-preference-read)
+(allow file-ioctl)
+
+;; ---------------------------------------------------------------------------
+;; Network - fully allowed
+;; ---------------------------------------------------------------------------
+(allow network*)
+
+;; ---------------------------------------------------------------------------
+;; Read access - global allow, then block /Users except selected paths
+;; ---------------------------------------------------------------------------
+(allow file-read*)
+
+;; Keep /Users and $HOME non-listable, while still allowing metadata reads below
+;; so runtime path resolution (for example, Node realpath/lstat) can traverse
+;; those ancestor directories.
+(deny file-read-data (literal "/Users"))
+(deny file-read-data (literal (param "_HOME")))
+
+(deny file-read*
+  (require-all
+    (subpath "/Users")
+    (require-not (literal "/Users"))
+    (require-not (literal (param "_HOME")))
+    (require-not (subpath (param "_PROJECT_DIR")))
+    (require-not (subpath (string-append (param "_HOME") "/src")))
+    (require-not (literal (string-append (param "_HOME") "/.gitconfig")))
+    (require-not (literal (string-append (param "_HOME") "/.gitignore_global")))
+    (require-not (literal (string-append (param "_HOME") "/.config/gh/config.yml")))
+    (require-not (literal (string-append (param "_HOME") "/.config/gh/hosts.yml")))
+    (require-not (subpath (string-append (param "_HOME") "/.cache")))
+    (require-not (subpath (string-append (param "_HOME") "/.local")))
+    (require-not (subpath (string-append (param "_HOME") "/.pi")))
+    (require-not (subpath (string-append (param "_HOME") "/.codex/skills")))
+    (require-not (subpath (string-append (param "_HOME") "/.nvm")))
+    (require-not (subpath (string-append (param "_HOME") "/Library/Keychains")))
+    (require-not (subpath (param "_TMPDIR")))
+    (require-not (subpath "/private/var/folders"))
+    (require-not (subpath "/var/folders"))
+  ))
+
+;; ---------------------------------------------------------------------------
+;; Device files
+;; ---------------------------------------------------------------------------
+;; Git and other tools commonly open /dev/null read-write.
+(allow file-write* (literal "/dev/null"))
+
+;; ---------------------------------------------------------------------------
+;; Write access - deny-default, explicit allowlist only
+;; ---------------------------------------------------------------------------
+(allow file-write* (subpath (param "_PROJECT_DIR")))
+(allow file-write* (subpath (string-append (param "_HOME") "/.cache")))
+(allow file-write* (subpath (string-append (param "_HOME") "/.codex/skills")))
+
+;; Pi uses proper-lockfile lock directories next to state files. Allow only the
+;; lock directories themselves, not general writes to ~/.pi/agent.
+(allow file-write* (literal (string-append (param "_HOME") "/.pi/agent/settings.json.lock")))
+(allow file-write* (literal (string-append (param "_HOME") "/.pi/agent/auth.json.lock")))
+
+;; Temporary directories. Allow both canonical macOS paths and common symlinked
+;; spellings so tools keep working regardless of whether paths are resolved.
+(allow file-write* (subpath (param "_TMPDIR")))
+(allow file-write* (subpath "/private/var/folders"))
+(allow file-write* (subpath "/var/folders"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (subpath "/tmp"))
+(allow file-write* (subpath "/private/var/tmp"))
+(allow file-write* (subpath "/var/tmp"))
+
+;; ---------------------------------------------------------------------------
+;; Mandatory write denies - defense-in-depth (HOME)
+;; ---------------------------------------------------------------------------
+(deny file-write* (subpath (string-append (param "_HOME") "/.ssh")))
+(deny file-write* (subpath (string-append (param "_HOME") "/.gnupg")))
+(deny file-write* (literal (string-append (param "_HOME") "/.gitconfig")))
+(deny file-write* (literal (string-append (param "_HOME") "/.zshrc")))
+(deny file-write* (literal (string-append (param "_HOME") "/.bashrc")))
+(deny file-write* (literal (string-append (param "_HOME") "/.profile")))
+(deny file-write* (literal (string-append (param "_HOME") "/.zprofile")))
+(deny file-write* (literal (string-append (param "_HOME") "/.zshenv")))
+(deny file-write* (literal (string-append (param "_HOME") "/.zlogout")))
+(deny file-write* (literal (string-append (param "_HOME") "/.bash_profile")))
+
+;; ---------------------------------------------------------------------------
+;; Mandatory write denies - defense-in-depth (PROJECT)
+;; ---------------------------------------------------------------------------
+(deny file-write* (subpath (string-append (param "_PROJECT_DIR") "/.git/hooks")))
+(deny file-write* (literal (string-append (param "_PROJECT_DIR") "/.git/config")))
+(deny file-write* (literal (string-append (param "_PROJECT_DIR") "/.bashrc")))
+(deny file-write* (literal (string-append (param "_PROJECT_DIR") "/.zshrc")))
+(deny file-write* (literal (string-append (param "_PROJECT_DIR") "/.gitconfig")))
+(deny file-write* (literal (string-append (param "_PROJECT_DIR") "/.mcp.json")))
+(deny file-write*
+  (require-all
+    (subpath (param "_PROJECT_DIR"))
+    (regex #"/\.env(\..*)?$")))
+(deny file-write*
+  (require-all
+    (subpath (param "_PROJECT_DIR"))
+    (regex #"/\.envrc$")))
+(deny file-write*
+  (require-all
+    (subpath (param "_PROJECT_DIR"))
+    (regex #"\.pem$")))
+(deny file-write*
+  (require-all
+    (subpath (param "_PROJECT_DIR"))
+    (regex #"\.key$")))
+(deny file-write* (subpath (string-append (param "_PROJECT_DIR") "/.vscode")))
+(deny file-write* (subpath (string-append (param "_PROJECT_DIR") "/.zed")))
+(deny file-write* (subpath (string-append (param "_PROJECT_DIR") "/.idea")))
