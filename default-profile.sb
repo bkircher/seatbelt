@@ -17,7 +17,7 @@
 ;; Write model:
 ;;   - Writes are denied by default and only allowed to explicitly listed paths.
 ;;   - Writes are allowed to the project directory, ~/.cache,
-;;     ~/.codex/skills, Pi lock directories, and temporary directories.
+;;     ~/.codex/skills, Pi lock directories, _TMPDIR, and /tmp.
 ;;   - Writes to sensitive project files remain denied even inside the project
 ;;     directory: .env, .env.*, .envrc, *.pem, and *.key.
 ;;
@@ -81,8 +81,6 @@
     (require-not (subpath (string-append (param "_HOME") "/.nvm")))
     (require-not (subpath (string-append (param "_HOME") "/Library/Keychains")))
     (require-not (subpath (param "_TMPDIR")))
-    (require-not (subpath "/private/var/folders"))
-    (require-not (subpath "/var/folders"))
   ))
 
 ;; ---------------------------------------------------------------------------
@@ -103,15 +101,11 @@
 (allow file-write* (literal (string-append (param "_HOME") "/.pi/agent/settings.json.lock")))
 (allow file-write* (literal (string-append (param "_HOME") "/.pi/agent/auth.json.lock")))
 
-;; Temporary directories. Allow both canonical macOS paths and common symlinked
-;; spellings so tools keep working regardless of whether paths are resolved.
+;; Temporary directories. Only allow the configured TMPDIR and /tmp. Keep
+;; /private/tmp as the canonical macOS spelling of /tmp.
 (allow file-write* (subpath (param "_TMPDIR")))
-(allow file-write* (subpath "/private/var/folders"))
-(allow file-write* (subpath "/var/folders"))
-(allow file-write* (subpath "/private/tmp"))
 (allow file-write* (subpath "/tmp"))
-(allow file-write* (subpath "/private/var/tmp"))
-(allow file-write* (subpath "/var/tmp"))
+(allow file-write* (subpath "/private/tmp"))
 
 ;; ---------------------------------------------------------------------------
 ;; Mandatory write denies - defense-in-depth (HOME)

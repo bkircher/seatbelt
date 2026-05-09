@@ -15,3 +15,9 @@ sandbox-exec -f default-profile.sb \
 </shell>
 
 - Verify default profile behavior by executing `./test.sh`.
+- If running the behavioral tests through the `sb` wrapper, pass the repository
+  profile explicitly:
+
+<shell>
+./sb --profile ./default-profile.sb ./test.sh
+</shell>
