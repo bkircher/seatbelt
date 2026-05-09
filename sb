@@ -8,6 +8,7 @@
 #   --allow-env NAME   Same
 #   --profile=PATH     Use an explicit sandbox profile path
 #   --profile PATH     Same
+#   -h, --help         Show this help message
 #
 # Examples:
 #   sb npm install                         # sandbox with a sanitized environment
@@ -25,6 +26,24 @@ set -euo pipefail
 
 ALLOWED_ENV=()
 PROFILE=""
+
+print_usage() {
+    cat <<'EOF'
+Usage: sb [options] <command> [args...]
+
+Options:
+  --allow-env=NAME   Pass through one additional environment variable
+  --allow-env NAME   Same
+  --profile=PATH     Use an explicit sandbox profile path
+  --profile PATH     Same
+  -h, --help         Show this help message
+
+Examples:
+  sb bash
+  sb --allow-env=ATLASSIAN_API_TOKEN pi
+  sb --profile ./default-profile.sb pi
+EOF
+}
 
 # Parse sb-specific flags before the command.
 while [[ $# -gt 0 ]]; do
@@ -47,12 +66,7 @@ while [[ $# -gt 0 ]]; do
             shift 2 ;;
         --) shift; break ;;
         -h|--help)
-            echo "Usage: sb [options] <command> [args...]"
-            echo "Options:"
-            echo "  --allow-env=NAME   Pass through one additional environment variable"
-            echo "  --allow-env NAME   Same"
-            echo "  --profile=PATH     Use an explicit sandbox profile path"
-            echo "  --profile PATH     Same"
+            print_usage
             exit 0 ;;
         -*) echo "error: unknown option: $1" >&2; exit 1 ;;
         *)  break ;;
@@ -70,9 +84,7 @@ if [[ ! -f "$PROFILE" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    echo "Usage: sb [options] <command> [args...]" >&2
-    echo "Example: sb bash" >&2
-    echo "Example: sb --allow-env=ATLASSIAN_API_TOKEN pi" >&2
+    print_usage >&2
     exit 1
 fi
 

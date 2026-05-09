@@ -134,6 +134,30 @@ assert_denied "denies read of ~/Library" /bin/ls "$HOME_DIR/Library"
 assert_denied "denies read of ~/.zshrc" /bin/cat "$HOME_DIR/.zshrc"
 assert_denied "denies read of ~/.zshenv" /bin/cat "$HOME_DIR/.zshenv"
 
+assert_wrapper_help() {
+    local output
+
+    if ! output="$("$PROJECT_DIR/sb" --help)"; then
+        echo "not ok - wrapper accepts --help" >&2
+        exit 1
+    fi
+
+    if grep -Fqx "Usage: sb [options] <command> [args...]" <<<"$output" \
+        && grep -Fqx "  -h, --help         Show this help message" <<<"$output"; then
+        echo "ok - wrapper accepts --help"
+    else
+        echo "not ok - wrapper accepts --help" >&2
+        exit 1
+    fi
+
+    if "$PROJECT_DIR/sb" -h >/dev/null; then
+        echo "ok - wrapper accepts -h"
+    else
+        echo "not ok - wrapper accepts -h" >&2
+        exit 1
+    fi
+}
+
 assert_wrapper_env() {
     local output
 
@@ -170,5 +194,6 @@ assert_wrapper_missing_env_denied() {
     fi
 }
 
+assert_wrapper_help
 assert_wrapper_env
 assert_wrapper_missing_env_denied
