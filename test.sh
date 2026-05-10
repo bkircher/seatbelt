@@ -27,6 +27,8 @@ ensure_fixture_dir() {
 
 ensure_fixture_dir "$HOME_DIR/.cache"
 ensure_fixture_dir "$HOME_DIR/.codex/skills"
+ensure_fixture_dir "$HOME_DIR/.pi/agent"
+ensure_fixture_dir "$HOME_DIR/.pi/agent/sessions"
 
 PROJECT_TEST_DIR="$PROJECT_DIR/$TEST_ID-dir"
 mkdir -p "$PROJECT_TEST_DIR"
@@ -35,6 +37,10 @@ PROJECT_WRITE="$PROJECT_DIR/$TEST_ID"
 CACHE_WRITE="$HOME_DIR/.cache/$TEST_ID"
 SKILLS_WRITE="$HOME_DIR/.codex/skills/$TEST_ID"
 PI_AGENT_SKILLS_WRITE="$HOME_DIR/.pi/agent/skills/$TEST_ID"
+PI_SESSION_WRITE="$HOME_DIR/.pi/agent/sessions/$TEST_ID.jsonl"
+PI_DEBUG_LOG="$HOME_DIR/.pi/agent/pi-debug.log"
+PI_DEBUG_LOG_BACKUP="$TMP_DIR/$TEST_ID-pi-debug.log.backup"
+PI_DEBUG_LOG_EXISTED=0
 PI_SETTINGS_LOCK_DIR="$HOME_DIR/.pi/agent/settings.json.lock"
 PI_AUTH_LOCK_DIR="$HOME_DIR/.pi/agent/auth.json.lock"
 TMP_WRITE="$TMP_DIR/$TEST_ID"
@@ -46,12 +52,18 @@ PROJECT_ENVRC_DENIED="$PROJECT_TEST_DIR/.envrc"
 PROJECT_PEM_DENIED="$PROJECT_TEST_DIR/$TEST_ID.pem"
 PROJECT_KEY_DENIED="$PROJECT_TEST_DIR/$TEST_ID.key"
 
+if [[ -e "$PI_DEBUG_LOG" ]]; then
+    cp -p "$PI_DEBUG_LOG" "$PI_DEBUG_LOG_BACKUP"
+    PI_DEBUG_LOG_EXISTED=1
+fi
+
 cleanup() {
     rm -f \
         "$PROJECT_WRITE" \
         "$CACHE_WRITE" \
         "$SKILLS_WRITE" \
         "$PI_AGENT_SKILLS_WRITE" \
+        "$PI_SESSION_WRITE" \
         "$TMP_WRITE" \
         "$HOME_WRITE_DENIED" \
         "$PI_WRITE_DENIED" \
@@ -60,6 +72,12 @@ cleanup() {
         "$PROJECT_ENVRC_DENIED" \
         "$PROJECT_PEM_DENIED" \
         "$PROJECT_KEY_DENIED"
+    if [[ "$PI_DEBUG_LOG_EXISTED" -eq 1 ]]; then
+        cp -p "$PI_DEBUG_LOG_BACKUP" "$PI_DEBUG_LOG" 2>/dev/null || true
+    else
+        rm -f "$PI_DEBUG_LOG" 2>/dev/null || true
+    fi
+    rm -f "$PI_DEBUG_LOG_BACKUP" 2>/dev/null || true
     rmdir "$PI_SETTINGS_LOCK_DIR" 2>/dev/null || true
     rmdir "$PI_AUTH_LOCK_DIR" 2>/dev/null || true
     rmdir "$PROJECT_TEST_DIR" 2>/dev/null || true
@@ -116,6 +134,8 @@ assert_allowed "can write project dir" /usr/bin/touch "$PROJECT_WRITE"
 assert_allowed "can write ~/.cache" /usr/bin/touch "$CACHE_WRITE"
 assert_allowed "can write ~/.codex/skills" /usr/bin/touch "$SKILLS_WRITE"
 assert_allowed "can write ~/.pi/agent/skills" /usr/bin/touch "$PI_AGENT_SKILLS_WRITE"
+assert_allowed "can write Pi sessions" /usr/bin/touch "$PI_SESSION_WRITE"
+assert_allowed "can write Pi debug log" /bin/sh -c "printf '%s\n' test > \"\$1\"" sh "$PI_DEBUG_LOG"
 assert_allowed "can create Pi settings lock dir" /bin/mkdir "$PI_SETTINGS_LOCK_DIR"
 assert_allowed "can create Pi auth lock dir" /bin/mkdir "$PI_AUTH_LOCK_DIR"
 assert_allowed "can write TMPDIR" /usr/bin/touch "$TMP_WRITE"

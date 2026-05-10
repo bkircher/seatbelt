@@ -16,8 +16,8 @@
 ;;
 ;; Write model:
 ;;   - Writes are denied by default and only allowed to explicitly listed paths.
-;;   - Writes are allowed to the project directory, ~/.cache,
-;;     ~/.codex/skills, Pi lock directories, _TMPDIR, and /tmp.
+;;   - Writes are allowed to the project directory and other explicitly allowed
+;;     paths.
 ;;   - Writes to sensitive project files remain denied even inside the project
 ;;     directory: .env, .env.*, .envrc, *.pem, and *.key.
 ;;
@@ -95,6 +95,13 @@
 (allow file-write* (subpath (param "_PROJECT_DIR")))
 (allow file-write* (subpath (string-append (param "_HOME") "/.cache")))
 (allow file-write* (subpath (string-append (param "_HOME") "/.codex/skills")))
+
+;; Pi writes session JSONL files under ~/.pi/agent/sessions. Commands such as
+;; /share and /export need the persisted session file to exist.
+(allow file-write* (subpath (string-append (param "_HOME") "/.pi/agent/sessions")))
+
+;; Pi writes /debug output directly to this single log file.
+(allow file-write* (literal (string-append (param "_HOME") "/.pi/agent/pi-debug.log")))
 
 ;; Pi uses proper-lockfile lock directories next to state files. Allow only the
 ;; lock directories themselves, not general writes to ~/.pi/agent.
