@@ -134,6 +134,7 @@
 (deny file-write* (literal (string-append (param "_HOME") "/.zshenv")))
 (deny file-write* (literal (string-append (param "_HOME") "/.zlogout")))
 (deny file-write* (literal (string-append (param "_HOME") "/.bash_profile")))
+(deny file-write* (literal (string-append (param "_HOME") "/.pgpass")))
 
 ;; ---------------------------------------------------------------------------
 ;; Mandatory write denies - defense-in-depth (PROJECT)
