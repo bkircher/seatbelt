@@ -69,11 +69,18 @@
     (require-not (literal "/Users"))
     (require-not (literal (param "_HOME")))
     (require-not (subpath (param "_PROJECT_DIR")))
+    ;; Allows all ~/src; secrets stored there are readable by the agent.
     (require-not (subpath (string-append (param "_HOME") "/src")))
+    ;; Git configuration used by git(1) and related tooling.
     (require-not (literal (string-append (param "_HOME") "/.gitconfig")))
     (require-not (literal (string-append (param "_HOME") "/.gitignore_global")))
+
+    ;; GitHub CLI (`gh(1)`) host/config files. If hosts.yml contains plaintext
+    ;; tokens on your machine, remove this exception or use Keychain-backed auth.
     (require-not (literal (string-append (param "_HOME") "/.config/gh/config.yml")))
     (require-not (literal (string-append (param "_HOME") "/.config/gh/hosts.yml")))
+
+    ;; Tool caches/state needed by common CLIs and coding agents.
     (require-not (subpath (string-append (param "_HOME") "/.cache")))
     (require-not (subpath (string-append (param "_HOME") "/.local")))
     (require-not (subpath (string-append (param "_HOME") "/.pi")))
