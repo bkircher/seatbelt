@@ -1,35 +1,20 @@
 #!/usr/bin/env bash
-# sb - Run (basically) any command inside a macOS sandbox-exec jail.
+# sb - Run a command inside a macOS sandbox-exec jail.
 #
-# Usage: sb [options] <command> [args...]
-#
-# Options:
-#   --allow-env=NAME   Pass through one additional environment variable
-#   --allow-env NAME   Same
-#   --profile=PATH     Use an explicit sandbox profile path
-#   --profile PATH     Same
-#   -h, --help         Show this help message
-#
-# Examples:
-#   sb npm install                         # sandbox with a sanitized environment
-#   sb --allow-env=ATLASSIAN_API_TOKEN pi  # pass through one additional variable
-#   sb --profile ./default-profile.sb pi   # use a profile from the project
-#
-# Policy (defined in default-profile.sb):
-#   - Writes are blocked outside the project directory, ~/.cache/, ~/.codex/skills/, and temp directories.
-#   - Reads of private keys, auth tokens, etc., are blocked.
-#   - Network, execution, and IPC are all allowed.
-#
-# Safety: refuses to run from $HOME (which would grant write access to the entire home directory).
+# See `sb --help` for usage. By default, sb reads its sandbox profile from:
+#   ${HOME}/.config/sb/default-profile.sb
 
 set -euo pipefail
 
 ALLOWED_ENV=()
+DEFAULT_PROFILE="${HOME}/.config/sb/default-profile.sb"
 PROFILE=""
 
 print_usage() {
-    cat <<'EOF'
+    cat <<EOF
 Usage: sb [options] <command> [args...]
+
+Run <command> inside a macOS sandbox-exec jail with a sanitized environment.
 
 Options:
   --allow-env=NAME   Pass through one additional environment variable
@@ -38,10 +23,19 @@ Options:
   --profile PATH     Same
   -h, --help         Show this help message
 
+Default profile:
+  ${DEFAULT_PROFILE}
+
 Examples:
-  sb bash
+  sb npm install
   sb --allow-env=ATLASSIAN_API_TOKEN pi
   sb --profile ./default-profile.sb pi
+
+Notes:
+  The sandbox project directory is the current Git repository root when inside
+  a Git repository, otherwise the current directory.
+  sb refuses to run from \$HOME because that would grant write access to the
+  entire home directory.
 EOF
 }
 
@@ -75,7 +69,7 @@ done
 
 # Find the profile in the home directory unless an explicit one was provided.
 if [[ -z "$PROFILE" ]]; then
-    PROFILE="${HOME}/.config/sb/default-profile.sb"
+    PROFILE="$DEFAULT_PROFILE"
 fi
 
 if [[ ! -f "$PROFILE" ]]; then
