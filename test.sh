@@ -36,6 +36,7 @@ mkdir -p \
     "$HOME_DIR/.codex/skills" \
     "$HOME_DIR/.config/gh" \
     "$HOME_DIR/.local" \
+    "$HOME_DIR/.npm" \
     "$HOME_DIR/.nvm" \
     "$HOME_DIR/.pi/agent/skills" \
     "$HOME_DIR/.pi/agent/sessions" \
@@ -47,11 +48,13 @@ mkdir -p \
 touch \
     "$HOME_DIR/.gitconfig" \
     "$HOME_DIR/.gitignore_global" \
+    "$HOME_DIR/.npmrc" \
     "$HOME_DIR/.zshrc" \
     "$HOME_DIR/.zshenv"
 
 PROJECT_WRITE="$PROJECT_DIR/$TEST_ID"
 CACHE_WRITE="$HOME_DIR/.cache/$TEST_ID"
+NPM_CACHE_WRITE="$HOME_DIR/.npm/$TEST_ID"
 SKILLS_WRITE="$HOME_DIR/.codex/skills/$TEST_ID"
 PI_AGENT_SKILLS_WRITE="$HOME_DIR/.pi/agent/skills/$TEST_ID"
 PI_SESSION_WRITE="$HOME_DIR/.pi/agent/sessions/$TEST_ID.jsonl"
@@ -61,6 +64,7 @@ PI_AUTH_LOCK_DIR="$HOME_DIR/.pi/agent/auth.json.lock"
 TMP_WRITE="$TMP_DIR/$TEST_ID"
 HOME_WRITE_DENIED="$HOME_DIR/$TEST_ID"
 PI_WRITE_DENIED="$HOME_DIR/.pi/agent/$TEST_ID"
+NPMRC_WRITE_DENIED="$HOME_DIR/.npmrc"
 PROJECT_ENV_DENIED="$PROJECT_TEST_DIR/.env"
 PROJECT_ENV_DOT_DENIED="$PROJECT_TEST_DIR/.env.$TEST_ID"
 PROJECT_ENVRC_DENIED="$PROJECT_TEST_DIR/.envrc"
@@ -109,6 +113,7 @@ assert_allowed "can read ~/src" /bin/ls "$HOME_DIR/src"
 assert_allowed "can read ~/.gitconfig" /bin/cat "$HOME_DIR/.gitconfig"
 assert_allowed "can read ~/.gitignore_global" /bin/cat "$HOME_DIR/.gitignore_global"
 assert_allowed "can read ~/.local" /bin/ls "$HOME_DIR/.local"
+assert_allowed "can read ~/.npm" /bin/ls "$HOME_DIR/.npm"
 assert_allowed "can read ~/.pi" /bin/ls "$HOME_DIR/.pi"
 assert_allowed "can read ~/.nvm" /bin/ls "$HOME_DIR/.nvm"
 assert_allowed "can read ~/Library/Keychains" /bin/ls "$HOME_DIR/Library/Keychains"
@@ -116,6 +121,7 @@ assert_allowed "can open /dev/null read-write" /bin/sh -c 'exec 3<>/dev/null'
 
 assert_allowed "can write project dir" /usr/bin/touch "$PROJECT_WRITE"
 assert_allowed "can write ~/.cache" /usr/bin/touch "$CACHE_WRITE"
+assert_allowed "can write ~/.npm" /usr/bin/touch "$NPM_CACHE_WRITE"
 assert_allowed "can write ~/.codex/skills" /usr/bin/touch "$SKILLS_WRITE"
 assert_allowed "can write ~/.pi/agent/skills" /usr/bin/touch "$PI_AGENT_SKILLS_WRITE"
 assert_allowed "can write Pi sessions" /usr/bin/touch "$PI_SESSION_WRITE"
@@ -126,6 +132,7 @@ assert_allowed "can write TMPDIR" /usr/bin/touch "$TMP_WRITE"
 
 assert_denied "denies write of home dir" /usr/bin/touch "$HOME_WRITE_DENIED"
 assert_denied "denies write of ~/.pi/agent" /usr/bin/touch "$PI_WRITE_DENIED"
+assert_denied "denies write of ~/.npmrc" /usr/bin/touch "$NPMRC_WRITE_DENIED"
 assert_denied "denies write of project .env" /usr/bin/touch "$PROJECT_ENV_DENIED"
 assert_denied "denies write of project .env.*" /usr/bin/touch "$PROJECT_ENV_DOT_DENIED"
 assert_denied "denies write of project .envrc" /usr/bin/touch "$PROJECT_ENVRC_DENIED"
@@ -135,6 +142,7 @@ assert_denied "denies write of project *.key" /usr/bin/touch "$PROJECT_KEY_DENIE
 assert_denied "denies listing /Users dir" /bin/ls "$USERS_DIR"
 assert_denied "denies listing home dir" /bin/ls "$HOME_DIR"
 assert_denied "denies read of ~/Library" /bin/ls "$HOME_DIR/Library"
+assert_denied "denies read of ~/.npmrc" /bin/cat "$HOME_DIR/.npmrc"
 assert_denied "denies read of ~/.zshrc" /bin/cat "$HOME_DIR/.zshrc"
 assert_denied "denies read of ~/.zshenv" /bin/cat "$HOME_DIR/.zshenv"
 

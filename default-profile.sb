@@ -81,6 +81,8 @@
 
     ;; Tool caches/state needed by common CLIs and coding agents.
     (require-not (subpath (string-append (param "_HOME") "/.cache")))
+    ;; npm's cache defaults to ~/.npm. This does not allow ~/.npmrc.
+    (require-not (subpath (string-append (param "_HOME") "/.npm")))
     (require-not (subpath (string-append (param "_HOME") "/.local")))
     (require-not (subpath (string-append (param "_HOME") "/.pi")))
     (require-not (subpath (string-append (param "_HOME") "/.codex/skills")))
@@ -100,6 +102,8 @@
 ;; ---------------------------------------------------------------------------
 (allow file-write* (subpath (param "_PROJECT_DIR")))
 (allow file-write* (subpath (string-append (param "_HOME") "/.cache")))
+;; npm's cache defaults to ~/.npm. This does not allow ~/.npmrc.
+(allow file-write* (subpath (string-append (param "_HOME") "/.npm")))
 (allow file-write* (subpath (string-append (param "_HOME") "/.codex/skills")))
 
 ;; Pi installs agent skills under ~/.pi/agent/skills.
