@@ -1,37 +1,54 @@
 #!/usr/bin/env bash
 # Minimal behavioral tests for default-profile.sb.
+#
+# Tests run against a repo-local fake filesystem rooted under .tmp/test-XXXXXXX.
+# The sandbox profile receives fake _USERS_DIR, _HOME, _PROJECT_DIR, and _TMPDIR
+# parameters so tests do not depend on or mutate the real /Users tree or live
+# home directory.
 
 set -euo pipefail
 
-PROFILE="${PWD}/default-profile.sb"
-HOME_DIR="$(cd "$HOME" && pwd -P)"
-PROJECT_DIR="$(pwd -P)"
-TMP_DIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
-TEST_ID="pi-seatbelt-test-$$"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PROFILE="$REPO_DIR/default-profile.sb"
+REPO_TMP_DIR="$REPO_DIR/.tmp"
 
-ensure_fixture_dir() {
-    local path="$1"
+mkdir -p "$REPO_TMP_DIR"
+TEST_ROOT="$(mktemp -d "$REPO_TMP_DIR/test-XXXXXXX")"
+TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
+TEST_ID="pi-seatbelt-test"
 
-    if [[ -d "$path" ]]; then
-        return 0
+cleanup() {
+    if [[ -n "${TEST_ROOT:-}" && "$TEST_ROOT" == "$REPO_TMP_DIR"/test-* ]]; then
+        rm -rf "$TEST_ROOT"
     fi
-
-    if mkdir -p "$path" 2>/dev/null; then
-        return 0
-    fi
-
-    echo "error: required test fixture directory is not available: $path" >&2
-    echo "When running test.sh inside the sandbox, create it once outside the sandbox first." >&2
-    exit 1
+    rmdir "$REPO_TMP_DIR" 2>/dev/null || true
 }
+trap cleanup EXIT
 
-ensure_fixture_dir "$HOME_DIR/.cache"
-ensure_fixture_dir "$HOME_DIR/.codex/skills"
-ensure_fixture_dir "$HOME_DIR/.pi/agent"
-ensure_fixture_dir "$HOME_DIR/.pi/agent/sessions"
-
+USERS_DIR="$TEST_ROOT/Users"
+HOME_DIR="$USERS_DIR/test-user"
+PROJECT_DIR="$TEST_ROOT/project"
+TMP_DIR="$TEST_ROOT/tmp"
 PROJECT_TEST_DIR="$PROJECT_DIR/$TEST_ID-dir"
-mkdir -p "$PROJECT_TEST_DIR"
+
+mkdir -p \
+    "$HOME_DIR/.cache" \
+    "$HOME_DIR/.codex/skills" \
+    "$HOME_DIR/.config/gh" \
+    "$HOME_DIR/.local" \
+    "$HOME_DIR/.nvm" \
+    "$HOME_DIR/.pi/agent/skills" \
+    "$HOME_DIR/.pi/agent/sessions" \
+    "$HOME_DIR/Library/Keychains" \
+    "$HOME_DIR/src" \
+    "$PROJECT_TEST_DIR" \
+    "$TMP_DIR"
+
+touch \
+    "$HOME_DIR/.gitconfig" \
+    "$HOME_DIR/.gitignore_global" \
+    "$HOME_DIR/.zshrc" \
+    "$HOME_DIR/.zshenv"
 
 PROJECT_WRITE="$PROJECT_DIR/$TEST_ID"
 CACHE_WRITE="$HOME_DIR/.cache/$TEST_ID"
@@ -39,8 +56,6 @@ SKILLS_WRITE="$HOME_DIR/.codex/skills/$TEST_ID"
 PI_AGENT_SKILLS_WRITE="$HOME_DIR/.pi/agent/skills/$TEST_ID"
 PI_SESSION_WRITE="$HOME_DIR/.pi/agent/sessions/$TEST_ID.jsonl"
 PI_DEBUG_LOG="$HOME_DIR/.pi/agent/pi-debug.log"
-PI_DEBUG_LOG_BACKUP="$TMP_DIR/$TEST_ID-pi-debug.log.backup"
-PI_DEBUG_LOG_EXISTED=0
 PI_SETTINGS_LOCK_DIR="$HOME_DIR/.pi/agent/settings.json.lock"
 PI_AUTH_LOCK_DIR="$HOME_DIR/.pi/agent/auth.json.lock"
 TMP_WRITE="$TMP_DIR/$TEST_ID"
@@ -52,40 +67,9 @@ PROJECT_ENVRC_DENIED="$PROJECT_TEST_DIR/.envrc"
 PROJECT_PEM_DENIED="$PROJECT_TEST_DIR/$TEST_ID.pem"
 PROJECT_KEY_DENIED="$PROJECT_TEST_DIR/$TEST_ID.key"
 
-if [[ -e "$PI_DEBUG_LOG" ]]; then
-    cp -p "$PI_DEBUG_LOG" "$PI_DEBUG_LOG_BACKUP"
-    PI_DEBUG_LOG_EXISTED=1
-fi
-
-cleanup() {
-    rm -f \
-        "$PROJECT_WRITE" \
-        "$CACHE_WRITE" \
-        "$SKILLS_WRITE" \
-        "$PI_AGENT_SKILLS_WRITE" \
-        "$PI_SESSION_WRITE" \
-        "$TMP_WRITE" \
-        "$HOME_WRITE_DENIED" \
-        "$PI_WRITE_DENIED" \
-        "$PROJECT_ENV_DENIED" \
-        "$PROJECT_ENV_DOT_DENIED" \
-        "$PROJECT_ENVRC_DENIED" \
-        "$PROJECT_PEM_DENIED" \
-        "$PROJECT_KEY_DENIED"
-    if [[ "$PI_DEBUG_LOG_EXISTED" -eq 1 ]]; then
-        cp -p "$PI_DEBUG_LOG_BACKUP" "$PI_DEBUG_LOG" 2>/dev/null || true
-    else
-        rm -f "$PI_DEBUG_LOG" 2>/dev/null || true
-    fi
-    rm -f "$PI_DEBUG_LOG_BACKUP" 2>/dev/null || true
-    rmdir "$PI_SETTINGS_LOCK_DIR" 2>/dev/null || true
-    rmdir "$PI_AUTH_LOCK_DIR" 2>/dev/null || true
-    rmdir "$PROJECT_TEST_DIR" 2>/dev/null || true
-}
-trap cleanup EXIT
-
 run_sb() {
     sandbox-exec -f "$PROFILE" \
+        -D "_USERS_DIR=$USERS_DIR" \
         -D "_HOME=$HOME_DIR" \
         -D "_PROJECT_DIR=$PROJECT_DIR" \
         -D "_TMPDIR=$TMP_DIR" \
@@ -116,7 +100,7 @@ assert_denied() {
     fi
 }
 
-assert_allowed "can stat /Users" /usr/bin/stat -f "%N" /Users
+assert_allowed "can stat users root" /usr/bin/stat -f "%N" "$USERS_DIR"
 assert_allowed "can stat home root" /usr/bin/stat -f "%N" "$HOME_DIR"
 assert_allowed "can read project dir" /bin/ls "$PROJECT_DIR"
 assert_allowed "can read ~/.cache" /bin/ls "$HOME_DIR/.cache"
@@ -140,7 +124,7 @@ assert_allowed "can create Pi settings lock dir" /bin/mkdir "$PI_SETTINGS_LOCK_D
 assert_allowed "can create Pi auth lock dir" /bin/mkdir "$PI_AUTH_LOCK_DIR"
 assert_allowed "can write TMPDIR" /usr/bin/touch "$TMP_WRITE"
 
-assert_denied "denies write of home root" /usr/bin/touch "$HOME_WRITE_DENIED"
+assert_denied "denies write of home dir" /usr/bin/touch "$HOME_WRITE_DENIED"
 assert_denied "denies write of ~/.pi/agent" /usr/bin/touch "$PI_WRITE_DENIED"
 assert_denied "denies write of project .env" /usr/bin/touch "$PROJECT_ENV_DENIED"
 assert_denied "denies write of project .env.*" /usr/bin/touch "$PROJECT_ENV_DOT_DENIED"
@@ -148,8 +132,8 @@ assert_denied "denies write of project .envrc" /usr/bin/touch "$PROJECT_ENVRC_DE
 assert_denied "denies write of project *.pem" /usr/bin/touch "$PROJECT_PEM_DENIED"
 assert_denied "denies write of project *.key" /usr/bin/touch "$PROJECT_KEY_DENIED"
 
-assert_denied "denies listing /Users" /bin/ls /Users
-assert_denied "denies listing home root" /bin/ls "$HOME_DIR"
+assert_denied "denies listing /Users dir" /bin/ls "$USERS_DIR"
+assert_denied "denies listing home dir" /bin/ls "$HOME_DIR"
 assert_denied "denies read of ~/Library" /bin/ls "$HOME_DIR/Library"
 assert_denied "denies read of ~/.zshrc" /bin/cat "$HOME_DIR/.zshrc"
 assert_denied "denies read of ~/.zshenv" /bin/cat "$HOME_DIR/.zshenv"
@@ -157,7 +141,7 @@ assert_denied "denies read of ~/.zshenv" /bin/cat "$HOME_DIR/.zshenv"
 assert_wrapper_help() {
     local output
 
-    if ! output="$("$PROJECT_DIR/sb" --help)"; then
+    if ! output="$("$REPO_DIR/sb" --help)"; then
         echo "not ok - wrapper accepts --help" >&2
         exit 1
     fi
@@ -170,7 +154,7 @@ assert_wrapper_help() {
         exit 1
     fi
 
-    if "$PROJECT_DIR/sb" -h >/dev/null; then
+    if "$REPO_DIR/sb" -h >/dev/null; then
         echo "ok - wrapper accepts -h"
     else
         echo "not ok - wrapper accepts -h" >&2
@@ -181,11 +165,11 @@ assert_wrapper_help() {
 assert_wrapper_env() {
     local output
 
-    if ! output="$(ALLOWED_ONE="one" \
+    if ! output="$(cd "$REPO_DIR" && ALLOWED_ONE="one" \
         ALLOWED_TWO="two" \
         SECRET_SHOULD_NOT_PASS="hidden" \
         TEST_BASE_URL="https://example.invalid" \
-        "$PROJECT_DIR/sb" \
+        "$REPO_DIR/sb" \
         --profile "$PROFILE" \
         --allow-env=ALLOWED_ONE \
         --allow-env ALLOWED_TWO \
@@ -206,7 +190,7 @@ assert_wrapper_env() {
 }
 
 assert_wrapper_missing_env_denied() {
-    if (unset MISSING_ALLOWED_ENV; "$PROJECT_DIR/sb" --profile "$PROFILE" --allow-env=MISSING_ALLOWED_ENV /usr/bin/true >/dev/null 2>&1); then
+    if (cd "$REPO_DIR" && unset MISSING_ALLOWED_ENV; "$REPO_DIR/sb" --profile "$PROFILE" --allow-env=MISSING_ALLOWED_ENV /usr/bin/true >/dev/null 2>&1); then
         echo "not ok - wrapper rejects missing allowed env" >&2
         exit 1
     else

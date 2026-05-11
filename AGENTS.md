@@ -8,6 +8,7 @@
 
 <shell>
 sandbox-exec -f default-profile.sb \
+    -D "_USERS_DIR=$(cd "$HOME/.." && pwd -P)" \
     -D "_HOME=$HOME" \
     -D "_PROJECT_DIR=$(pwd -P)" \
     -D "_TMPDIR=${TMPDIR:-/tmp}" \

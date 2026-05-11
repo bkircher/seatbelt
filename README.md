@@ -112,9 +112,9 @@ by others, use agent-safehouse. You can also layer them together.
 
 `default-profile.sb` is standard
 [SBPL](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf).
-The wrapper injects three parameters: `_HOME`, `_PROJECT_DIR`, `_TMPDIR`. Edit
-the file to match your setup. Add cache directories your tools need, and block
-paths specific to your machine.
+The wrapper injects four parameters: `_USERS_DIR`, `_HOME`, `_PROJECT_DIR`, and
+`_TMPDIR`. Edit the file to match your setup. Add cache directories your tools
+need, and block paths specific to your machine.
 
 ## Ideas
 

@@ -90,6 +90,7 @@ fi
 
 # Resolve real paths.
 RESOLVED_HOME="$(cd "$HOME" && pwd -P)"
+RESOLVED_USERS_DIR="$(cd "$RESOLVED_HOME/.." && pwd -P)"
 PROJECT_DIR="$(pwd -P)"
 
 # Walk up to the Git root if inside a repository (so the full project is writable).
@@ -115,6 +116,7 @@ RESOLVED_TMPDIR="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
 
 SANDBOX_ARGS=(
     sandbox-exec -f "$PROFILE"
+    -D "_USERS_DIR=${RESOLVED_USERS_DIR}"
     -D "_HOME=${RESOLVED_HOME}"
     -D "_PROJECT_DIR=${PROJECT_DIR}"
     -D "_TMPDIR=${RESOLVED_TMPDIR}"

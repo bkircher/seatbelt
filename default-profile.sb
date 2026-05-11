@@ -2,26 +2,25 @@
 ;;
 ;; Policy:
 ;;   - Start from deny-default.
-;;   - Reads:
-;;     - Allow reads globally.
-;;     - Deny reads in /Users except explicit exceptions.
-;;   - Writes:
-;;     - Allow writes only to explicit paths.
 ;;
-;; Read model:
-;;   - Reads outside /Users remain allowed, so system tools keep working.
-;;   - Reads inside /Users are blocked unless they match one of the exceptions.
-;;   - Metadata reads of /Users and the home directory itself remain allowed so
-;;     runtimes can resolve real paths without granting directory listing access.
+;;   Reads:
+;;     - Reads outside the users directory remain allowed, so system tools keep
+;;       working.
+;;     - Reads inside the users directory are blocked unless they match one of the
+;;       exceptions.
+;;     - Metadata reads of the users directory and the home directory remain
+;;       allowed so runtimes can resolve real paths without granting directory
+;;       listing access.
 ;;
-;; Write model:
-;;   - Writes are denied by default and only allowed to explicitly listed paths.
-;;   - Writes are allowed to the project directory and other explicitly allowed
-;;     paths.
-;;   - Writes to sensitive project files remain denied even inside the project
-;;     directory: .env, .env.*, .envrc, *.pem, and *.key.
+;;   Writes:
+;;     - Writes are denied by default and only allowed to explicitly listed paths.
+;;     - Writes are allowed to the project directory and other explicitly allowed
+;;       paths.
+;;     - Writes to sensitive project files remain denied even inside the project
+;;       directory: .env, .env.*, .envrc, *.pem, and *.key.
 ;;
 ;; Parameters (injected by wrapper):
+;;   _USERS_DIR    - parent directory containing user homes
 ;;   _HOME         - user home directory
 ;;   _PROJECT_DIR  - resolved project working directory
 ;;   _TMPDIR       - macOS per-user temp directory
@@ -53,20 +52,20 @@
 (allow network*)
 
 ;; ---------------------------------------------------------------------------
-;; Read access - global allow, then block /Users except selected paths
+;; Read access - global allow, then block users directory except selected paths
 ;; ---------------------------------------------------------------------------
 (allow file-read*)
 
-;; Keep /Users and $HOME non-listable, while still allowing metadata reads below
-;; so runtime path resolution (for example, Node realpath/lstat) can traverse
-;; those ancestor directories.
-(deny file-read-data (literal "/Users"))
+;; Keep the users directory and $HOME non-listable, while still allowing
+;; metadata reads below so runtime path resolution (for example, Node
+;; realpath/lstat) can traverse those ancestor directories.
+(deny file-read-data (literal (param "_USERS_DIR")))
 (deny file-read-data (literal (param "_HOME")))
 
 (deny file-read*
   (require-all
-    (subpath "/Users")
-    (require-not (literal "/Users"))
+    (subpath (param "_USERS_DIR"))
+    (require-not (literal (param "_USERS_DIR")))
     (require-not (literal (param "_HOME")))
     (require-not (subpath (param "_PROJECT_DIR")))
     ;; Allows all ~/src; secrets stored there are readable by the agent.
@@ -102,6 +101,9 @@
 (allow file-write* (subpath (param "_PROJECT_DIR")))
 (allow file-write* (subpath (string-append (param "_HOME") "/.cache")))
 (allow file-write* (subpath (string-append (param "_HOME") "/.codex/skills")))
+
+;; Pi installs agent skills under ~/.pi/agent/skills.
+(allow file-write* (subpath (string-append (param "_HOME") "/.pi/agent/skills")))
 
 ;; Pi writes session JSONL files under ~/.pi/agent/sessions. Commands such as
 ;; /share and /export need the persisted session file to exist.
