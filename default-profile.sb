@@ -74,6 +74,9 @@
     (require-not (literal (string-append (param "_HOME") "/.gitconfig")))
     (require-not (literal (string-append (param "_HOME") "/.gitignore_global")))
 
+    ;; SSH host key verification for git/ssh.
+    (require-not (literal (string-append (param "_HOME") "/.ssh/known_hosts")))
+
     ;; GitHub CLI (`gh(1)`) host/config files. If hosts.yml contains plaintext
     ;; tokens on your machine, remove this exception or use Keychain-backed auth.
     (require-not (literal (string-append (param "_HOME") "/.config/gh/config.yml")))
