@@ -1,5 +1,19 @@
 ; tools/cargo.sb
 
-; Allow cargo
-(allow file-read-data file-write*
-    (literal (string-append home-dir "/.cargo")))
+; Allow cargo and rustup shims/cache/toolchains
+(define cargo-dir (string-append home-dir "/.cargo"))
+(define rustup-dir (string-append home-dir "/.rustup"))
+
+(allow file-read* file-write*
+    (literal cargo-dir)
+    (subpath cargo-dir))
+
+(allow file-read*
+    (literal rustup-dir)
+    (subpath rustup-dir))
+
+; LibreSSL/OpenSSL initialization used by Cargo/libgit2 reads this file
+(allow file-read-data
+    (literal "/private/etc/ssl/openssl.cnf"))
+
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))

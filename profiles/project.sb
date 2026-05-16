@@ -4,3 +4,11 @@
 (allow file-read-data file-write*
     (literal project-dir)
     (subpath project-dir))
+
+(deny file-write*
+    (literal (string-append project-dir "/.vscode"))
+    (subpath (string-append project-dir "/.vscode"))
+    (literal (string-append project-dir "/.zed"))
+    (subpath (string-append project-dir "/.zed"))
+    (literal (string-append project-dir "/.idea"))
+    (subpath (string-append project-dir "/.idea")))

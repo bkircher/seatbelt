@@ -1,2 +1,4 @@
+; homebrew.sb
+
 (allow file-read-data
     (subpath "/opt/homebrew"))

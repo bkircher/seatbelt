@@ -1,0 +1,8 @@
+; tools/gh.sb
+
+; GitHub CLI. If hosts.yml contains plaintext tokens on your machine, remove
+; this exception or use Keychain-backed auth.
+(allow file-read*
+    (literal (string-append home-dir "/.config/gh/config.yml"))
+    (literal (string-append home-dir "/.config/gh/hosts.yml"))
+    (subpath (string-append home-dir "/Library/Keychains")))

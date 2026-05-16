@@ -1,4 +1,4 @@
-; tools/no-docker.sb
+; no-docker.sb
 
 ; Disallow Docker and OrbStack to communicate with the daemon through the
 ; socket. Unix-domain socket connects are mediated as network-outbound on macOS;

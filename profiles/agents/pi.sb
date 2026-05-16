@@ -14,10 +14,10 @@
 ; Node file watching
 (allow mach-lookup (global-name "com.apple.FSEvents"))
 
-(define pi-config (string-append (param "_HOME") "/.pi/agent"))
+(define pi-config (string-append home-dir "/.pi/agent"))
 
 (allow file-read* (subpath pi-config))
-(allow file-read* (subpath (string-append (param "_HOME") "/src/pi")))
+(allow file-read* (subpath (string-append home-dir "/src/pi")))
 
 ; Pi installs agent skills under ~/.pi/agent/skills. This is a symlink for me,
 ; though.

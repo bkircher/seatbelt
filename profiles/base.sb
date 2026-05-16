@@ -90,3 +90,18 @@
 ; Baseline
 (deny file-write*)
 (deny default)
+
+; Keep /Users and $HOME non-listable
+(deny file-read-data
+    (literal users-dir)
+    (literal home-dir))
+
+; Block reading/listing user files, but keep metadata readable
+(deny file-read* (subpath users-dir))
+(allow file-read-metadata (subpath users-dir))
+
+; Explicitly allow ~/.cache
+(define dot-cache-dir (string-append home-dir "/.cache"))
+(allow file-read* file-write*
+    (literal dot-cache-dir)
+    (subpath dot-cache-dir))
