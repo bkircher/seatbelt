@@ -83,10 +83,15 @@
 (deny file-read* (subpath users-dir))
 (allow file-read-metadata (subpath users-dir))
 
-; Allow read and write access to temporary directories
-(allow file-read-data file-write-create
-    (subpath "/private/tmp")
+; Allow full "scratch space" semantics under $TMPDIR. Tools expect to create,
+; rename, chmod, xattr, and delete their own temporary trees there.
+(allow file-read* file-write*
     (subpath per-user-temp-root))
+
+; Keep the global shared /private/tmp more constrained: tools may create/read
+; files there, but cannot unlink arbitrary pre-existing files.
+(allow file-read-data file-write-create
+    (subpath "/private/tmp"))
 
 ; Explicitly allow ~/.cache
 (define dot-cache-dir (string-append home-dir "/.cache"))

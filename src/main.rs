@@ -15,6 +15,7 @@ pub mod cli;
 const DEFAULT_CONFIG_SUFFIX: &str = ".config/seatbelt/default.yaml";
 const CONFIGS_SUFFIX: &str = ".config/seatbelt";
 const PROFILES_SUFFIX: &str = ".config/seatbelt/profiles";
+const REQUIRED_TMPDIR_PREFIX: &str = "/private/var/folders";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -111,6 +112,7 @@ fn run(config: RunConfig) -> Result<()> {
 
     let tmpdir = required_env_path("TMPDIR")?;
     let resolved_tmpdir = canonicalize(tmpdir, "failed to resolve TMPDIR")?;
+    validate_tmpdir(&resolved_tmpdir)?;
 
     let sandbox_context = SandboxContext {
         profile: &config.invocation.profile,
@@ -382,6 +384,17 @@ fn required_env_path(name: &str) -> Result<PathBuf> {
     env::var_os(name)
         .map(PathBuf::from)
         .ok_or_else(|| eyre!("required environment variable is not set: {name}"))
+}
+
+fn validate_tmpdir(path: &Path) -> Result<()> {
+    if !path.starts_with(REQUIRED_TMPDIR_PREFIX) {
+        bail!(
+            "TMPDIR must resolve under {REQUIRED_TMPDIR_PREFIX}: {}",
+            path.display()
+        );
+    }
+
+    Ok(())
 }
 
 fn canonicalize(path: impl AsRef<Path>, context: &'static str) -> Result<PathBuf> {
@@ -701,6 +714,25 @@ mod tests {
             ]
         );
         Ok(())
+    }
+
+    #[test]
+    fn accepts_system_per_user_tmpdir() {
+        let result = validate_tmpdir(Path::new(
+            "/private/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T",
+        ));
+
+        assert_eq!(result.map_err(|error| error.to_string()), Ok(()));
+    }
+
+    #[test]
+    fn rejects_global_tmpdir() {
+        let result = validate_tmpdir(Path::new("/private/tmp"));
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some("TMPDIR must resolve under /private/var/folders: /private/tmp".to_owned())
+        );
     }
 
     #[test]
