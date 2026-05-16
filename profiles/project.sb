@@ -1,7 +1,7 @@
 ; project.sb
 
 ; cwd/project access
-(allow file-read-data file-write*
+(allow file-read* file-write*
     (literal project-dir)
     (subpath project-dir))
 
