@@ -58,19 +58,10 @@
 ; Launch Services lookup
 (allow mach-lookup (global-name "com.apple.coreservices.launchservicesd"))
 
-; Allow read and write access to temporary directories
-(allow file-read-data file-write-create
-    (subpath "/private/tmp")
-    (subpath per-user-temp-root))
-
 ; Locate and load Xcode and Command Line Tools
 (allow file-read-data
     (subpath "/Applications/Xcode.app/Contents/Developer")
     (subpath "/Library/Developer/CommandLineTools"))
-
-; Allow to use ~/Library/Caches
-(define user-caches-dir (string-append home-dir "/Library/Caches"))
-(allow file-read-data file-write-create (subpath user-caches-dir))
 
 ; Network is fully allowed
 (allow network*)
@@ -78,14 +69,6 @@
 ; DNS / network configuration lookup
 (allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))
 (allow file-read-data (literal "/Library/Preferences/com.apple.networkd.plist"))
-
-; TTY access
-(allow pseudo-tty)
-(allow file-read* file-write* file-ioctl (literal "/dev/ptmx"))
-(allow file-read* file-write*
-    (regex "^/dev/ttys[0-9]*"))
-(allow file-read* file-write* file-ioctl
-    (literal "/dev/tty"))
 
 ; Baseline
 (deny file-write*)
@@ -100,8 +83,25 @@
 (deny file-read* (subpath users-dir))
 (allow file-read-metadata (subpath users-dir))
 
+; Allow read and write access to temporary directories
+(allow file-read-data file-write-create
+    (subpath "/private/tmp")
+    (subpath per-user-temp-root))
+
 ; Explicitly allow ~/.cache
 (define dot-cache-dir (string-append home-dir "/.cache"))
 (allow file-read* file-write*
     (literal dot-cache-dir)
     (subpath dot-cache-dir))
+
+; Allow to use ~/Library/Caches
+(define user-caches-dir (string-append home-dir "/Library/Caches"))
+(allow file-read-data file-write-create (subpath user-caches-dir))
+
+; TTY access
+(allow pseudo-tty)
+(allow file-read* file-write* file-ioctl (literal "/dev/ptmx"))
+(allow file-read* file-write*
+    (regex "^/dev/ttys[0-9]*"))
+(allow file-read* file-write* file-ioctl
+    (literal "/dev/tty"))
