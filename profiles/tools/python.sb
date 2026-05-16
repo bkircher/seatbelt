@@ -1,0 +1,10 @@
+; tools/python.sb
+
+; Python may query SystemConfiguration via configd
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))
+
+; uv cache directory
+(define uv-cache-dir (string-append home-dir "/.cache/uv"))
+(allow file-read* file-write*
+    (literal uv-cache-dir)
+    (subpath uv-cache-dir))

@@ -7,4 +7,5 @@ profiles:
    - tools/git.sb
    - tools/gh.sb
    - tools/cargo.sb
+   - tools/python.sb
    - agents/pi.sb

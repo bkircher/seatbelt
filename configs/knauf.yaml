@@ -8,6 +8,7 @@ profiles:
    - tools/gh.sb
    - tools/docker.sb
    - tools/node.sb
+   - tools/python.sb
    - agents/pi.sb
 
 allowed_envs:
