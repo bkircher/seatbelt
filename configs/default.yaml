@@ -3,6 +3,7 @@ profiles:
    - homebrew.sb
    - no-docker.sb
    - project.sb
+   - tools/ssh.sb
    - tools/git.sb
    - tools/gh.sb
    - tools/cargo.sb

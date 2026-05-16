@@ -1,0 +1,36 @@
+; tools/ssh.sb
+
+(define ssh-dir (string-append home-dir "/.ssh"))
+(define ssh-user-config (string-append ssh-dir "/config"))
+(define ssh-known-hosts (string-append ssh-dir "/known_hosts"))
+
+; OpenSSH may read user/system client configuration and known_hosts for host key
+; verification, but the rest of ~/.ssh (private keys, etc.) stays unreadable and
+; unwritable unless another later profile deliberately changes that policy.
+;
+; Note: SSH agent access works without any SBPL: the wrapper passes
+; SSH_AUTH_SOCK, which commonly resolves to a launchd listener such as
+; /private/var/run/com.apple.launchd.<id>/Listeners. Since base.sb allows
+; network*, Unix-domain socket connects are allowed. Test it with:
+; `seatbelt run ssh-add -L`
+;
+; Note: macOS configs may include /etc/ssh/ssh_config.d/*; if those includes are
+; expected to work, this profile may need to allow them
+(allow file-read*
+    (literal ssh-user-config)
+    (literal ssh-known-hosts)
+    (literal "/private/etc/ssh/ssh_config"))
+
+(deny file-read-data
+    (require-all
+        (require-any
+            (literal ssh-dir)
+            (subpath ssh-dir))
+        (require-not
+            (require-any
+                (literal ssh-user-config)
+                (literal ssh-known-hosts)))))
+
+(deny file-write*
+    (literal ssh-dir)
+    (subpath ssh-dir))
