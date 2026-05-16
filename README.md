@@ -1,4 +1,4 @@
-# pi-seatbelt
+# Seatbelt
 
 A macOS sandbox wrapper for the pi coding agent. Two files, no dependencies. The
 pi Node.js process itself runs in a sandbox.
@@ -37,7 +37,7 @@ To use a profile that is not installed under `~/.config/sb`, pass it explicitly:
 sb --profile ./default-profile.sb pi
 ```
 
-## The problem pi-seatbelt fixes
+## The problem seatbelt fixes
 
 There are some sandbox extensions written for pi, but they are hard to
 understand because they all run after the main pi Node.js process is already
@@ -68,7 +68,7 @@ Instead, pi itself needs to be spawned in a sandbox.
 This works as an outer layer around any agent's own sandbox:
 
 ```
-pi-seatbelt                  OS-level, file policy
+seatbelt                     OS-level, file policy
 └─ agent's built-in sandbox  tool-level, network filtering, whatever
     └─ your agent process
 ```

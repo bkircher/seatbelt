@@ -15,7 +15,7 @@ REPO_TMP_DIR="$REPO_DIR/.tmp"
 mkdir -p "$REPO_TMP_DIR"
 TEST_ROOT="$(mktemp -d "$REPO_TMP_DIR/test-XXXXXXX")"
 TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
-TEST_ID="pi-seatbelt-test"
+TEST_ID="seatbelt-test"
 
 cleanup() {
     if [[ -n "${TEST_ROOT:-}" && "$TEST_ROOT" == "$REPO_TMP_DIR"/test-* ]]; then
