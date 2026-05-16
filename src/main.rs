@@ -16,6 +16,7 @@ const DEFAULT_CONFIG_SUFFIX: &str = ".config/seatbelt/default.yaml";
 const CONFIGS_SUFFIX: &str = ".config/seatbelt";
 const PROFILES_SUFFIX: &str = ".config/seatbelt/profiles";
 const REQUIRED_TMPDIR_PREFIX: &str = "/private/var/folders";
+const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -298,7 +299,7 @@ fn build_final_command(
     allow_env: &[String],
     command: &[OsString],
 ) -> Result<Vec<OsString>> {
-    let mut final_command = vec![OsString::from("sandbox-exec")];
+    let mut final_command = vec![OsString::from(SANDBOX_EXEC_PATH)];
 
     match sandbox_context.profile {
         SandboxProfile::File(profile) => {
@@ -606,7 +607,7 @@ mod tests {
         assert_eq!(
             actual,
             vec![
-                os("sandbox-exec"),
+                os(SANDBOX_EXEC_PATH),
                 os("-f"),
                 os("/profiles/default.sb"),
                 os("-D"),
@@ -652,7 +653,7 @@ mod tests {
         assert_eq!(
             actual,
             vec![
-                os("sandbox-exec"),
+                os(SANDBOX_EXEC_PATH),
                 os("-f"),
                 os("/profiles/default.sb"),
                 os("-D"),
@@ -690,7 +691,7 @@ mod tests {
         assert_eq!(
             actual,
             vec![
-                os("sandbox-exec"),
+                os(SANDBOX_EXEC_PATH),
                 os("-p"),
                 os("(version 1)\n(import \"/profiles/base.sb\")\n"),
                 os("-D"),
