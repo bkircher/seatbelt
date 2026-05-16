@@ -45,9 +45,9 @@ However, this still does not handle:
 This works as an outer layer around any agent's own sandbox:
 
 ```
-seatbelt                     OS-level, file policy
-└─ agent's built-in sandbox  tool-level, network filtering, other controls
-    └─ your agent process
+seatbelt                         OS-level, file policy
+└─ agent's built-in sandbox      if any
+    └─ your agent process tree
 ```
 
 The outer layer handles what the agent shouldn't touch. The inner layer handles
@@ -82,9 +82,6 @@ log stream --style syslog --predicate 'process == "kernel" AND sender == "Sandbo
 
 ## Ideas / TODO
 
-- Per-toolchain cache directory allowlists (Node, Python, Rust, Go, etc.) in the
-  profiles.
-- Block the Docker socket by default, and add a profile for enabling it.
 - Additional profiles for clipboard, SSH, 1Password, headless browsers?
 - Auth proxy: A reverse proxy running outside the sandbox that injects API keys
   into outbound requests. The sandboxed agent only talks to `localhost` and
