@@ -1,47 +1,18 @@
 # Seatbelt
 
-A macOS sandbox wrapper for the pi coding agent. Two files, no dependencies. The
-pi Node.js process itself runs in a sandbox.
-
-It wraps `sandbox-exec` (Apple's Seatbelt) around your agent so it can't read
-your secrets or write outside your project, even if you run it with
-`--dangerously-skip-permissions` or any equivalent YOLO mode.
-
-## Install
-
-Just symlink or copy `sb` into `$PATH` and `default-profile.sb` to
-`~/.config/sb/default-profile.sb`, respectively. Or put them wherever you
-prefer. Before using it, review and customize the profile for your machine and
-workflow.
+A macOS sandbox wrapper for running agents or other tools with SBPL profiles.
 
 ## Usage
 
 ```bash
-cd ~/my-project
-sb pi
+cd ~/acme-project
+seatbelt --config=acme run pi
 ```
 
-`sb` starts the command with a sanitized environment by default: common runtime
-variables are preserved, but secrets and arbitrary exported variables are not
-passed through. To pass through an additional variable explicitly, use
-`--allow-env`:
+## The problem `seatbelt` fixes
 
-```bash
-sb --allow-env=ATLASSIAN_API_TOKEN pi
-sb --allow-env ATLASSIAN_API_TOKEN --allow-env JIRA_API_TOKEN pi
-```
-
-To use a profile that is not installed under `~/.config/sb`, pass it explicitly:
-
-```bash
-sb --profile ./default-profile.sb pi
-```
-
-## The problem seatbelt fixes
-
-There are some sandbox extensions written for pi, but they are hard to
-understand because they all run after the main pi Node.js process is already
-running:
+Some sandbox extensions written for `pi` are hard to reason about because they
+all run after the main `pi` Node.js process is already running:
 
 ```text
 pi Node.js process       unsandboxed
@@ -56,12 +27,18 @@ The sandbox applies to the inner shell and its process tree. `exec`, `fork`,
 `spawn`, etc. do not escape it. However, any extension can spawn its own child
 processes, so they can bypass the inner sandbox. This means:
 
-Arbitrary child processes spawned by the main pi Node.js process are not
+Arbitrary child processes spawned by the main `pi` Node.js process are not
 automatically sandboxed.
 
-This makes those approaches largely ineffective.
+This makes those approaches largely ineffective. Instead, `pi` itself needs to
+be spawned in a sandbox. For this use case, `sandbox-exec` provides a very
+straightforward SBPL profile syntax.
 
-Instead, pi itself needs to be spawned in a sandbox.
+However, this still does not handle:
+
+- policy composition
+- environment variables
+- outbound network firewalling
 
 ## Layering with built-in sandboxes
 
@@ -69,75 +46,65 @@ This works as an outer layer around any agent's own sandbox:
 
 ```
 seatbelt                     OS-level, file policy
-└─ agent's built-in sandbox  tool-level, network filtering, whatever
+└─ agent's built-in sandbox  tool-level, network filtering, other controls
     └─ your agent process
 ```
 
 The outer layer handles what the agent shouldn't touch. The inner layer handles
 tool-specific permissions and optional network controls. They don't conflict.
-Seatbelt rules compose by intersection.
-
-## Comparison with agent-safehouse
-
-[agent-safehouse](https://github.com/eugene1g/agent-safehouse) is a larger
-project that solves the same problem. ~50 files, a build system, auto-detection
-for different agents, per-toolchain profiles, and per-project config files. It's
-well done.
-
-Where this project is stricter:
-
-- Granular read-denies on secrets (AWS credentials with a config exception, gh
-  hosts vs. settings, SSH private keys vs. public keys, browser profiles, shell
-  history, `.netrc`, `.npmrc`, `.cargo/credentials.toml`). agent-safehouse
-  doesn't cover most of these.
-- Write-denies inside the project (`.git/hooks`, `.git/config`, `.mcp.json`, IDE
-  directories). agent-safehouse grants full write access to the working
-  directory.
-- Write-denies on `$HOME` shell init files and `~/.gitconfig`. agent-safehouse
-  relies on not granting HOME writes in the first place, but toolchain profiles
-  can open gaps.
-
-Where agent-safehouse does more:
-
-- Per-toolchain cache directory allowlists (Node, Python, Rust, Go, etc.).
-- Agent auto-detection (Claude, Codex, and Amp get different profiles).
-- Docker socket blocking by default.
-- Optional modules for clipboard, SSH, 1Password, headless browsers.
-
-Pick based on what you want. If you want something you can read in 10 minutes
-and tune to your exact setup, this is it. If you want broad coverage maintained
-by others, use agent-safehouse. You can also layer them together.
+Seatbelt rules compose by taking the intersection.
 
 ## Customization
 
-`default-profile.sb` is standard
+Profiles are written in
 [SBPL](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf).
 The wrapper injects four parameters: `_USERS_DIR`, `_HOME`, `_PROJECT_DIR`, and
-`_TMPDIR`. Edit the file to match your setup. Add cache directories your tools
-need, and block paths specific to your machine.
+`_TMPDIR`. You can add or change your own profiles. Profiles are meant for
+defining sandbox policies. They should be small and targeted to the command,
+tools, or current project or task.
 
-## Ideas
+For user-facing configuration, use `--config`. It allows SBPL profile
+composition and environment variable handling. Network policies may come later.
 
+## Debugging SBPL profiles
+
+See logs with something like:
+
+```sh
+log stream --style syslog --predicate 'process == "kernel" AND sender == "Sandbox"'
+```
+
+or just denials:
+
+```sh
+log stream --style syslog --predicate 'process == "kernel" AND sender == "Sandbox" AND eventMessage CONTAINS "deny"'
+```
+
+## Ideas / TODO
+
+- Per-toolchain cache directory allowlists (Node, Python, Rust, Go, etc.) in the
+  profiles.
+- Block the Docker socket by default, and add a profile for enabling it.
+- Additional profiles for clipboard, SSH, 1Password, headless browsers?
 - Auth proxy: A reverse proxy running outside the sandbox that injects API keys
   into outbound requests. The sandboxed agent only talks to `localhost` and
   never sees the real keys. [mitmproxy](https://mitmproxy.org/) with header
   injection can do this in one line. Most SDKs (OpenAI, Anthropic, etc.) already
   support a custom `base_url`, which can be used for this.
-
-- Network proxy: Seatbelt is not a DNS-aware outbound firewall. So we can
-  disallow all networking
+- Network proxy: Seatbelt is not a DNS-aware outbound firewall. It can disallow
+  all networking:
   ```scheme
   (deny network*)
   ```
-  We can also allow broad outbound networking
+  It can also allow broad outbound networking:
   ```scheme
   (allow network-outbound)
   ```
-  but it cannot do domain allowlists natively like
+  However, it cannot do domain allowlists natively like:
   ```scheme
   (allow network-outbound "example.com:443")
   ```
-  Theoretically, we can allow localhost/proxy-style access
+  In theory, it can allow localhost/proxy-style access:
   ```scheme
   (deny network*)
   (allow network-outbound (remote tcp "localhost:8080"))
@@ -148,16 +115,17 @@ need, and block paths specific to your machine.
 There are many.
 
 - macOS only. For Linux, maybe look at
-  [bubblewrap](https://github.com/containers/bubblewrap). No idea.
+  [bubblewrap](https://github.com/containers/bubblewrap).
 - `sandbox-exec` is technically deprecated by Apple. It still works on Sequoia
   and Tahoe, and no replacement exists for third-party use. It is actively
   maintained. Apple still ships security fixes for sandbox escapes and sandbox
   restrictions in current macOS security updates. For example, macOS Sequoia
   15.7.4 had a [fix](https://support.apple.com/en-us/126349) for a sandbox
   breakout.
-- Network is wide open. If a secret enters the process, it can be exfiltrated
-  easily. Seatbelt cannot deny outgoing network on a host-by-host basis. This
-  would require an outgoing network proxy (maybe in the future?).
+- Network access is wide open. If a secret enters the process, it can be
+  exfiltrated easily. Seatbelt cannot deny outbound network access on a
+  host-by-host basis. This would require an outbound network proxy (maybe in the
+  future?).
 - Keychain access is allowed by design, so credential helpers (git, AWS) work
   without the agent seeing raw tokens. But the agent can still perform
   authenticated actions like `git push`.

@@ -1,0 +1,43 @@
+; agents/pi.sb
+;
+; My Pi agent is linked as npm workspace globally in my nvm default alias.
+
+; Allow reading nvm installed binaries and aliases
+(allow file-read-data
+    (subpath (string-append home-dir "/.nvm")))
+
+; Node/libuv probes /dev
+(allow file-read-data
+    (literal "/dev")
+    (subpath "/dev"))
+
+; Node file watching
+(allow mach-lookup (global-name "com.apple.FSEvents"))
+
+(define pi-config (string-append (param "_HOME") "/.pi/agent"))
+
+(allow file-read* (subpath pi-config))
+(allow file-read* (subpath (string-append (param "_HOME") "/src/pi")))
+
+; Pi installs agent skills under ~/.pi/agent/skills. This is a symlink for me,
+; though.
+(allow file-read* file-write*
+    (subpath (string-append pi-config "/skills"))
+    (subpath "/Users/bk/src/skills"))
+
+; Pi writes session JSONL files under ~/.pi/agent/sessions. Commands such as
+; /share and /export need the persisted session file to exist.
+(allow file-write* (subpath (string-append pi-config "/sessions")))
+
+; Pi writes /debug output directly to this single log file.
+(allow file-write* (literal (string-append pi-config "/pi-debug.log")))
+
+; Pi stores OAuth credentials in auth.json. Subscription providers such as
+; OpenAI Codex use short-lived access tokens, so Pi must be able to write this
+; file when it refreshes the token during a long-running session.
+(allow file-write* (literal (string-append pi-config "/auth.json")))
+
+; Pi uses proper-lockfile lock directories next to state files. Allow only the
+; lock directories themselves, not general writes to ~/.pi/agent.
+(allow file-write* (literal (string-append pi-config "/settings.json.lock")))
+(allow file-write* (literal (string-append pi-config "/auth.json.lock")))

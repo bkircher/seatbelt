@@ -1,0 +1,7 @@
+profiles:
+   - base.sb
+   - homebrew.sb
+   - no-docker.sb
+   - project.sb
+   - tools/cargo.sb
+   - agents/pi.sb

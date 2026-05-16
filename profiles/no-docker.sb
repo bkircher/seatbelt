@@ -1,0 +1,11 @@
+; tools/no-docker.sb
+
+; Disallow Docker and OrbStack to communicate with the daemon through the
+; socket. Unix-domain socket connects are mediated as network-outbound on macOS;
+; the file operations alone do not block a client from connecting when network*
+; is allowed by the base profile.
+(define orbstack-run-dir (string-append home-dir "/.orbstack/run"))
+(deny file-read* file-write* file-ioctl network-outbound
+    (literal "/var/run/docker.sock")
+    (literal "/private/var/run/docker.sock")
+    (literal (string-append orbstack-run-dir "/docker.sock")))

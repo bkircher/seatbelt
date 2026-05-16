@@ -1,0 +1,25 @@
+; tools/docker.sb
+
+; Allow Docker CLI shims and OrbStack's Docker helper binaries
+(define docker-user-bin-dir (string-append home-dir "/bin"))
+(define docker-config-dir (string-append home-dir "/.docker"))
+(define orbstack-bin-dir (string-append home-dir "/.orbstack/bin"))
+(define orbstack-run-dir (string-append home-dir "/.orbstack/run"))
+
+(allow file-read-data
+    (literal docker-user-bin-dir)
+    (subpath docker-user-bin-dir)
+    (literal orbstack-bin-dir)
+    (subpath orbstack-bin-dir))
+
+; Docker reads client configuration such as auth and credential helper settings
+(allow file-read*
+    (literal docker-config-dir)
+    (subpath docker-config-dir)
+    (literal (string-append docker-config-dir "/config.json")))
+
+; Docker and OrbStack communicate with the daemon through Unix-domain sockets
+(allow file-read* file-write* file-ioctl network-outbound
+    (literal "/var/run/docker.sock")
+    (literal "/private/var/run/docker.sock")
+    (literal (string-append orbstack-run-dir "/docker.sock")))

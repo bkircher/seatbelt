@@ -1,0 +1,92 @@
+; base.sb
+(version 1)
+
+; Import graph:
+;
+;   base.sb
+;     └── /System/Library/Sandbox/Profiles/bsd.sb
+;           └── /System/Library/Sandbox/Profiles/system.sb
+;                 └── /System/Library/Sandbox/Profiles/dyld-support.sb
+;
+; bsd.sb: Apple's BSD-daemon baseline. It allows metadata traversal, some common
+; system file reads/writes, libnotify shared memory, and self-signaling.
+;
+; system.sb: System baseline. It allows standard system library/framework reads,
+; dyld/framework mapping, common Mach lookups, sysctls, device files like
+; /dev/null, and other OS bootstrap essentials.
+;
+; dyld-support.sb: Minimal rules needed for dynamic loader startup. It allows
+; reading/mapping cryptex/system runtime paths and syscalls/file operations
+; needed by dyld/libignition.
+;
+; Note: this can break with any system update.
+(import "/System/Library/Sandbox/Profiles/bsd.sb")
+
+; Define parameters injected by wrapper:
+;
+;   _HOME         - user's home directory
+;   _USERS_DIR    - directory containing all user homes
+;   _PROJECT_DIR  - the project working directory; wrapper shall reject $HOME
+;   _TMPDIR       - macOS per-user temporary directory
+;
+; For each of these, the wrapper shall pass the resolved physical paths to
+; ensure explicit path resolution in profiles.
+(define home-dir (param "_HOME"))
+(define users-dir (param "_USERS_DIR"))
+(define project-dir (param "_PROJECT_DIR"))
+(define per-user-temp-root (param "_TMPDIR"))
+
+; Log denials during development
+(debug deny)
+
+; Allow the process to read its own executable and libraries, execve and fork
+(allow file-read-data
+    (subpath "/usr/local/bin")
+    (subpath "/System/Volumes/Preboot/Cryptexes/App/usr/bin")
+    (subpath "/usr/bin")
+    (subpath "/bin")
+    (subpath "/usr/sbin")
+    (subpath "/sbin")
+    (subpath "/Applications"))
+
+(allow process-exec)
+(allow process-fork)
+(allow file-ioctl)
+(allow user-preference-read)
+(allow system-socket)
+
+; Launch Services lookup
+(allow mach-lookup (global-name "com.apple.coreservices.launchservicesd"))
+
+; Allow read and write access to temporary directories
+(allow file-read-data file-write-create
+    (subpath "/private/tmp")
+    (subpath per-user-temp-root))
+
+; Locate and load Xcode and Command Line Tools
+(allow file-read-data
+    (subpath "/Applications/Xcode.app/Contents/Developer")
+    (subpath "/Library/Developer/CommandLineTools"))
+
+; Allow to use ~/Library/Caches
+(define user-caches-dir (string-append home-dir "/Library/Caches"))
+(allow file-read-data file-write-create (subpath user-caches-dir))
+
+; Network is fully allowed
+(allow network*)
+
+; DNS / network configuration lookup
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))
+(allow file-read-data (literal "/Library/Preferences/com.apple.networkd.plist"))
+
+; TTY access
+(allow pseudo-tty)
+(allow file-read* file-write* file-ioctl (literal "/dev/ptmx"))
+(allow file-read* file-write*
+    (regex "^/dev/ttys[0-9]*"))
+(allow file-read* file-write* file-ioctl
+    (literal "/dev/tty"))
+
+; Baseline
+(deny file-write*)
+(deny default)

@@ -1,0 +1,71 @@
+[package]
+name = "seatbelt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+color-eyre = "0.6.5"
+eyre = "0.6.12"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"
+yaml_serde = "0.10.4"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# Don't panic. Prevent panics from unwraps and unsafe slicing or indexing.
+string_slice = "warn"
+indexing_slicing = "warn"
+unwrap_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+get_unwrap = "warn"
+unwrap_in_result = "warn"
+unchecked_time_subtraction = "warn"
+panic_in_result_fn = "warn"
+
+# Don't fail silently. Prevent dropped futures and swallowed errors.
+let_underscore_future = "warn"
+let_underscore_must_use = "warn"
+unused_result_ok = "warn"
+map_err_ignore = "warn"
+assertions_on_result_states = "warn"
+
+# Don't do bad async stuff. Prevent deadlocks and concurrency bugs.
+await_holding_lock = "warn"
+await_holding_refcell_ref = "warn"
+large_futures = "warn"
+
+# Don't do unsafe things with memory.
+mem_forget = "warn"
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+unnecessary_safety_doc = "warn"
+unnecessary_safety_comment = "warn"
+
+# Don't do potentially incorrect things with numbers.
+float_cmp = "warn"
+float_cmp_const = "warn"
+lossy_float_literal = "warn"
+cast_sign_loss = "warn"
+invalid_upcast_comparisons = "warn"
+# Optional. These effectively force you to document numeric invariants.
+#cast_possible_wrap = "warn"
+#cast_precision_loss = "warn"
+#cast_possible_truncation = "warn"
+
+# Don't do bad things that are easy to avoid.
+rc_mutex = "warn"
+debug_assert_with_mut_call = "warn"
+iter_not_returning_iterator = "warn"
+expl_impl_clone_on_copy = "warn"
+infallible_try_from = "warn"
+dbg_macro = "warn"
+
+# Don't `allow` your way around these lints. Every suppression must be
+# a deliberate #[expect(..., reason = "...")] rather than a silent #[allow].
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"

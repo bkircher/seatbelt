@@ -1,0 +1,2 @@
+(allow file-read-data
+    (subpath "/opt/homebrew"))

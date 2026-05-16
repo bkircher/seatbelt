@@ -1,0 +1,5 @@
+; tools/cargo.sb
+
+; Allow cargo
+(allow file-read-data file-write*
+    (literal (string-append home-dir "/.cargo")))

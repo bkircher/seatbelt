@@ -1,0 +1,17 @@
+; tools/node.sb
+
+; Allow reading nvm installed binaries and aliases
+(allow file-read-data
+    (subpath (string-append home-dir "/.nvm")))
+
+; Node/libuv probes /dev
+(allow file-read-data
+    (literal "/dev")
+    (subpath "/dev"))
+
+; Node file watching
+(allow mach-lookup (global-name "com.apple.FSEvents"))
+
+; Optional: Node REPL history
+(allow file-read-data file-write*
+    (literal (string-append home-dir "/.node_repl_history")))
