@@ -1,0 +1,6 @@
+; knauf.sb
+
+(define knauf-group-dir "/Users/bk/src/Knauf-Group")
+(allow file-read* file-write*
+    (literal knauf-group-dir)
+    (subpath knauf-group-dir))

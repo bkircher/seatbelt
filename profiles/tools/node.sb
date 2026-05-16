@@ -16,9 +16,8 @@
 (allow file-read-data file-write*
     (literal (string-append home-dir "/.node_repl_history")))
 
-; TODO: erm, we have tokens in here
-; (allow file-read-data
-;     (literal (string-append home-dir "/.npmrc")))
+(allow file-read-data
+    (literal (string-append home-dir "/.npmrc")))
 
 (allow file-read* file-write*
     (literal (string-append home-dir "/.npm"))
