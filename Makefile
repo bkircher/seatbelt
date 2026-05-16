@@ -4,7 +4,7 @@ BINARY := target/release/seatbelt
 INSTALL_BIN := $(HOME)/bin
 INSTALL_CONFIG := $(HOME)/.config/seatbelt
 
-all: test build install
+all: test build
 
 test:
 	cargo test
