@@ -1,8 +1,11 @@
 ; tools/gh.sb
 
 ; GitHub CLI. If hosts.yml contains plaintext tokens on your machine, remove
-; this exception or use Keychain-backed auth.
+; this or switch to Keychain-backed auth.
 (allow file-read*
     (literal (string-append home-dir "/.config/gh/config.yml"))
     (literal (string-append home-dir "/.config/gh/hosts.yml"))
     (subpath (string-append home-dir "/Library/Keychains")))
+
+; Allow GitHub CLI to access Keychain-backed credentials.
+(allow mach-lookup (global-name "com.apple.SecurityServer"))
