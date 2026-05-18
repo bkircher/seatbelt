@@ -17,3 +17,21 @@
     (literal "/private/etc/ssl/openssl.cnf"))
 
 (allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))
+
+; Following is needed for cargo xcode builds.
+; Apple cc/xcrun developer toolchain discovery
+(allow mach-lookup
+    (global-name "com.apple.dt.CommandLineTools.installondemand"))
+
+(allow file-read-data
+    (literal "/Library/Preferences/com.apple.dt.Xcode.plist"))
+
+; Read Xcode private developer frameworks
+(allow file-read*
+    (subpath "/Library/Developer/PrivateFrameworks"))
+
+; Xcode/xcodebuild cold-cache: allow to write files under the per-user Darwin
+; cache dir.
+; Test with: `xcrun -k` to clean the cache
+(allow file-read* file-write*
+    (regex "^/private/var/folders/[^/]+/[^/]+/C/com\\.apple\\.DeveloperTools(/|$)"))
