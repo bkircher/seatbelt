@@ -18,6 +18,13 @@ pub struct Cli {
     pub allow_env: Vec<String>,
 
     #[arg(
+        long = "allow-read",
+        value_name = "DIR",
+        help = "Allow read-only access to an additional directory"
+    )]
+    pub allow_read: Vec<PathBuf>,
+
+    #[arg(
         long,
         value_name = "NAME_OR_PATH",
         help = "Use a YAML config by name or path"
@@ -59,4 +66,27 @@ pub struct RunArgs {
         allow_hyphen_values = true
     )]
     pub command: Vec<OsString>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_repeated_allow_read_options() {
+        let actual = Cli::parse_from([
+            "seatbelt",
+            "--allow-read",
+            "docs",
+            "--allow-read",
+            "/opt/shared",
+            "run",
+            "true",
+        ]);
+
+        assert_eq!(
+            actual.allow_read,
+            vec![PathBuf::from("docs"), PathBuf::from("/opt/shared")]
+        );
+    }
 }

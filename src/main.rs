@@ -71,7 +71,13 @@ fn main() -> Result<(), ErrReport> {
 
     let cli = cli::Cli::parse();
     let home = required_env_path("HOME")?;
-    let invocation = load_invocation_config(&home, cli.config, cli.profile, cli.allow_env)?;
+    let invocation = load_invocation_config(
+        &home,
+        cli.config,
+        cli.profile,
+        cli.allow_env,
+        cli.allow_read,
+    )?;
 
     match cli.command {
         cli::Command::PrintProfile => {
@@ -142,17 +148,25 @@ fn load_invocation_config(
     config_arg: Option<PathBuf>,
     profile_arg: Option<PathBuf>,
     cli_allow_env: Vec<String>,
+    cli_allow_read: Vec<PathBuf>,
 ) -> Result<InvocationConfig> {
     if config_arg.is_some() && profile_arg.is_some() {
         bail!("--profile cannot be used together with --config");
     }
 
+    let allow_read_dirs = resolve_allow_read_dirs(&cli_allow_read)?;
+
     if let Some(profile) = profile_arg {
         validate_allowed_env_names(&cli_allow_env)?;
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
+        let profile = if allow_read_dirs.is_empty() {
+            SandboxProfile::File(profile)
+        } else {
+            SandboxProfile::Text(compose_import_profile(&[profile], &allow_read_dirs)?)
+        };
         return Ok(InvocationConfig {
             allow_env: cli_allow_env,
-            profile: SandboxProfile::File(profile),
+            profile,
         });
     }
 
@@ -170,12 +184,29 @@ fn load_invocation_config(
     validate_allowed_env_names(&allow_env)?;
 
     let profile_root = home.join(PROFILES_SUFFIX);
-    let profile_text = compose_profile(&profile_root, &seatbelt_config.profiles)?;
+    let mut profile_text = compose_profile(&profile_root, &seatbelt_config.profiles)?;
+    append_allow_read_dirs(&mut profile_text, &allow_read_dirs)?;
 
     Ok(InvocationConfig {
         allow_env,
         profile: SandboxProfile::Text(profile_text),
     })
+}
+
+fn resolve_allow_read_dirs(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut resolved_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        let resolved_path = canonicalize(path, "failed to resolve --allow-read path")?;
+        if !resolved_path.is_dir() {
+            bail!(
+                "--allow-read path must be a directory: {}",
+                resolved_path.display()
+            );
+        }
+        resolved_paths.push(resolved_path);
+    }
+
+    Ok(resolved_paths)
 }
 
 fn resolve_config_path(home: &Path, config_arg: &Path) -> Result<PathBuf> {
@@ -237,15 +268,44 @@ fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> 
         bail!("config must contain at least one profile");
     }
 
-    let mut profile = String::from("(version 1)\n\n");
+    let mut imports = Vec::with_capacity(profiles.len());
     for profile_fragment in profiles {
-        let resolved_fragment = resolve_profile_fragment(profile_root, profile_fragment)?;
-        profile.push_str("(import ");
-        profile.push_str(&sbpl_string_literal(&resolved_fragment)?);
-        profile.push_str(")\n");
+        imports.push(resolve_profile_fragment(profile_root, profile_fragment)?);
     }
 
+    compose_import_profile(&imports, &[])
+}
+
+fn compose_import_profile(imports: &[PathBuf], allow_read_dirs: &[PathBuf]) -> Result<String> {
+    let mut profile = String::from("(version 1)\n\n");
+    for import in imports {
+        profile.push_str("(import ");
+        profile.push_str(&sbpl_string_literal(import)?);
+        profile.push_str(")\n");
+    }
+    append_allow_read_dirs(&mut profile, allow_read_dirs)?;
+
     Ok(profile)
+}
+
+fn append_allow_read_dirs(profile: &mut String, allow_read_dirs: &[PathBuf]) -> Result<()> {
+    if allow_read_dirs.is_empty() {
+        return Ok(());
+    }
+
+    profile.push_str("\n; Additional read-only directories from --allow-read\n");
+    profile.push_str("(allow file-read*\n");
+    for directory in allow_read_dirs {
+        let directory = sbpl_string_literal(directory)?;
+        profile.push_str("    (literal ");
+        profile.push_str(&directory);
+        profile.push_str(")\n    (subpath ");
+        profile.push_str(&directory);
+        profile.push_str(")\n");
+    }
+    profile.push_str(")\n");
+
+    Ok(())
 }
 
 fn resolve_profile_fragment(profile_root: &Path, profile_fragment: &Path) -> Result<PathBuf> {
@@ -795,12 +855,70 @@ allowed_envs:
             Some(PathBuf::from("acme")),
             Some(PathBuf::from("raw.sb")),
             vec![],
+            vec![],
         );
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
             Some("--profile cannot be used together with --config".to_owned())
         );
+    }
+
+    #[test]
+    fn resolve_allow_read_dirs_resolves_relative_directories() -> Result<()> {
+        let expected = canonicalize(Path::new("src"), "failed to resolve test directory")?;
+
+        let actual = resolve_allow_read_dirs(&[PathBuf::from("src")])?;
+
+        assert_eq!(actual, vec![expected]);
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_read_dirs_rejects_files() -> Result<()> {
+        let resolved_file = canonicalize(Path::new("Cargo.toml"), "failed to resolve test file")?;
+
+        let result = resolve_allow_read_dirs(&[PathBuf::from("Cargo.toml")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-read path must be a directory: {}",
+                resolved_file.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn compose_import_profile_appends_allow_read_dirs() -> Result<()> {
+        let actual = compose_import_profile(
+            &[PathBuf::from("/profiles/raw.sb")],
+            &[
+                PathBuf::from("/Users/alice/docs"),
+                PathBuf::from("/Volumes/Shared Stuff"),
+            ],
+        )?;
+
+        assert_eq!(
+            actual,
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from --allow-read\n(allow file-read*\n    (literal \"/Users/alice/docs\")\n    (subpath \"/Users/alice/docs\")\n    (literal \"/Volumes/Shared Stuff\")\n    (subpath \"/Volumes/Shared Stuff\")\n)\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn compose_import_profile_escapes_allow_read_dirs() -> Result<()> {
+        let actual = compose_import_profile(
+            &[PathBuf::from("/profiles/raw.sb")],
+            &[PathBuf::from("/Users/alice/quoted\"directory")],
+        )?;
+
+        assert_eq!(
+            actual,
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from --allow-read\n(allow file-read*\n    (literal \"/Users/alice/quoted\\\"directory\")\n    (subpath \"/Users/alice/quoted\\\"directory\")\n)\n"
+        );
+        Ok(())
     }
 
     #[test]
