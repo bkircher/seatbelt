@@ -32,6 +32,9 @@
 ; Pi writes /debug output directly to this single log file.
 (allow file-write* (literal (string-append pi-config "/pi-debug.log")))
 
+; Pi persists its own agent settings here.
+(allow file-write* (literal (string-append pi-config "/settings.json")))
+
 ; Pi stores OAuth credentials in auth.json. Subscription providers such as
 ; OpenAI Codex use short-lived access tokens, so Pi must be able to write this
 ; file when it refreshes the token during a long-running session.
