@@ -1,0 +1,12 @@
+; tools/nvim.sb
+
+(define nvim-data-dir (string-append home-dir "/.local/share/nvim"))
+(define nvim-state-dir (string-append home-dir "/.local/state/nvim"))
+
+; Neovim stores plugins, generated docs, and related data under
+; ~/.local/share/nvim, and state under ~/.local/state/nvim.
+(allow file-read* file-write*
+    (literal nvim-data-dir)
+    (subpath nvim-data-dir)
+    (literal nvim-state-dir)
+    (subpath nvim-state-dir))

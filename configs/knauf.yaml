@@ -9,6 +9,7 @@ profiles:
    - tools/docker.sb
    - tools/node.sb
    - tools/python.sb
+   - tools/nvim.sb
    - agents/pi.sb
 
 allowed_envs:

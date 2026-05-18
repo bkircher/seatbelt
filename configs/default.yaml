@@ -8,4 +8,5 @@ profiles:
    - tools/gh.sb
    - tools/cargo.sb
    - tools/python.sb
+   - tools/nvim.sb
    - agents/pi.sb
