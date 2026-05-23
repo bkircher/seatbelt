@@ -19,6 +19,9 @@
 (allow file-read* (subpath pi-config))
 (allow file-read* (subpath (string-append home-dir "/src/pi")))
 
+; Pi web tools/extensions are checked out separately from the Pi source tree.
+(allow file-read* (subpath (string-append home-dir "/src/pi-web-tools")))
+
 ; Pi installs agent skills under ~/.pi/agent/skills. This is a symlink for me,
 ; though.
 (allow file-read* file-write*
