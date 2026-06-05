@@ -38,6 +38,9 @@
 ; Pi persists its own agent settings here.
 (allow file-write* (literal (string-append pi-config "/settings.json")))
 
+; Pi persists project trust decisions here.
+(allow file-write* (literal (string-append pi-config "/trust.json")))
+
 ; Pi stores OAuth credentials in auth.json. Subscription providers such as
 ; OpenAI Codex use short-lived access tokens, so Pi must be able to write this
 ; file when it refreshes the token during a long-running session.
@@ -46,4 +49,5 @@
 ; Pi uses proper-lockfile lock directories next to state files. Allow only the
 ; lock directories themselves, not general writes to ~/.pi/agent.
 (allow file-write* (literal (string-append pi-config "/settings.json.lock")))
+(allow file-write* (literal (string-append pi-config "/trust.json.lock")))
 (allow file-write* (literal (string-append pi-config "/auth.json.lock")))
