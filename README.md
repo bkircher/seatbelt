@@ -64,9 +64,11 @@ defining sandbox policies. They should be small and targeted to the command,
 tools, or current project or task.
 
 For user-facing configuration, use `--config`. It allows SBPL profile
-composition and environment variable handling. Use `--allow-read DIR` to add
-read-only access to an extra directory; `DIR` is resolved like `realpath` and
-must exist as a directory. Network policies may come later.
+composition, environment variable handling, and extra read-only directories.
+Use `--allow-read DIR` to add read-only access to an extra directory; `DIR` is
+resolved like `realpath` and must exist as a directory. Config files can also
+include `allow_read`; entries use the same rules, and `~` expands to `$HOME`.
+Network policies may come later.
 
 ## Debugging SBPL profiles
 

@@ -1,0 +1,14 @@
+profiles:
+   - base.sb
+   - homebrew.sb
+   - no-docker.sb
+   - project.sb
+   - tools/git.sb
+   - tools/cargo.sb
+   - tools/node.sb
+   - tools/nvim.sb
+   - agents/pi.sb
+
+allow_read:
+  - ~/src/pi
+  - ~/src/obscura

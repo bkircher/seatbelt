@@ -26,6 +26,9 @@ struct SeatbeltConfig {
 
     #[serde(default)]
     allowed_envs: Vec<String>,
+
+    #[serde(default)]
+    allow_read: Vec<PathBuf>,
 }
 
 struct InvocationConfig {
@@ -154,11 +157,10 @@ fn load_invocation_config(
         bail!("--profile cannot be used together with --config");
     }
 
-    let allow_read_dirs = resolve_allow_read_dirs(&cli_allow_read)?;
-
     if let Some(profile) = profile_arg {
         validate_allowed_env_names(&cli_allow_env)?;
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
+        let allow_read_dirs = resolve_allow_read_dirs(home, &cli_allow_read)?;
         let profile = if allow_read_dirs.is_empty() {
             SandboxProfile::File(profile)
         } else {
@@ -183,6 +185,10 @@ fn load_invocation_config(
     allow_env.extend(cli_allow_env);
     validate_allowed_env_names(&allow_env)?;
 
+    let mut allow_read_paths = seatbelt_config.allow_read;
+    allow_read_paths.extend(cli_allow_read);
+    let allow_read_dirs = resolve_allow_read_dirs(home, &allow_read_paths)?;
+
     let profile_root = home.join(PROFILES_SUFFIX);
     let mut profile_text = compose_profile(&profile_root, &seatbelt_config.profiles)?;
     append_allow_read_dirs(&mut profile_text, &allow_read_dirs)?;
@@ -193,10 +199,11 @@ fn load_invocation_config(
     })
 }
 
-fn resolve_allow_read_dirs(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+fn resolve_allow_read_dirs(home: &Path, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut resolved_paths = Vec::with_capacity(paths.len());
     for path in paths {
-        let resolved_path = canonicalize(path, "failed to resolve --allow-read path")?;
+        let expanded_path = expand_home_path(home, path);
+        let resolved_path = canonicalize(&expanded_path, "failed to resolve --allow-read path")?;
         if !resolved_path.is_dir() {
             bail!(
                 "--allow-read path must be a directory: {}",
@@ -207,6 +214,18 @@ fn resolve_allow_read_dirs(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     }
 
     Ok(resolved_paths)
+}
+
+fn expand_home_path(home: &Path, path: &Path) -> PathBuf {
+    if path == Path::new("~") {
+        return home.to_path_buf();
+    }
+
+    if let Ok(path_from_home) = path.strip_prefix("~") {
+        return home.join(path_from_home);
+    }
+
+    path.to_path_buf()
 }
 
 fn resolve_config_path(home: &Path, config_arg: &Path) -> Result<PathBuf> {
@@ -594,7 +613,7 @@ fn exec_command(final_command: &[OsString]) -> Result<()> {
     reason = "tests use ? for fallible command construction while assertions still panic"
 )]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, fs};
 
     use super::*;
 
@@ -620,6 +639,44 @@ mod tests {
 
     fn os(value: &str) -> OsString {
         OsString::from(value)
+    }
+
+    struct TestTempDir {
+        path: PathBuf,
+    }
+
+    impl TestTempDir {
+        fn new(name: &str) -> Result<Self> {
+            let base = env::var_os("TMPDIR")
+                .map(PathBuf::from)
+                .ok_or_else(|| eyre!("TMPDIR is not set for test"))?;
+            let path = base.join(format!("seatbelt-{name}-{}", std::process::id()));
+
+            if path.exists() {
+                fs::remove_dir_all(&path).wrap_err_with(|| {
+                    format!("failed to clean test directory: {}", path.display())
+                })?;
+            }
+            fs::create_dir_all(&path)
+                .wrap_err_with(|| format!("failed to create test directory: {}", path.display()))?;
+
+            Ok(Self { path })
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            if let Err(error) = fs::remove_dir_all(&self.path) {
+                eprintln!(
+                    "failed to clean test directory {}: {error}",
+                    self.path.display()
+                );
+            }
+        }
     }
 
     fn file_profile() -> SandboxProfile {
@@ -805,6 +862,9 @@ profiles:
   - agents/pi.sb
 allowed_envs:
   - ATLASSIAN_API_TOKEN
+allow_read:
+  - ~/src/pi
+  - docs
 "#,
         )?;
 
@@ -813,6 +873,10 @@ allowed_envs:
             vec![PathBuf::from("base.sb"), PathBuf::from("agents/pi.sb")]
         );
         assert_eq!(config.allowed_envs, vec!["ATLASSIAN_API_TOKEN"]);
+        assert_eq!(
+            config.allow_read,
+            vec![PathBuf::from("~/src/pi"), PathBuf::from("docs")]
+        );
         Ok(())
     }
 
@@ -865,10 +929,82 @@ allowed_envs:
     }
 
     #[test]
+    fn load_invocation_config_combines_config_and_cli_allow_read_dirs() -> Result<()> {
+        let temp = TestTempDir::new("config-allow-read")?;
+        let home = temp.path().join("home");
+        let profile_dir = home.join(PROFILES_SUFFIX);
+        let config_read_dir = home.join("src/pi");
+        let cli_read_dir = temp.path().join("obscura");
+        fs::create_dir_all(&profile_dir).wrap_err_with(|| {
+            format!(
+                "failed to create profile directory: {}",
+                profile_dir.display()
+            )
+        })?;
+        fs::create_dir_all(&config_read_dir).wrap_err_with(|| {
+            format!(
+                "failed to create config allow-read directory: {}",
+                config_read_dir.display()
+            )
+        })?;
+        fs::create_dir_all(&cli_read_dir).wrap_err_with(|| {
+            format!(
+                "failed to create CLI allow-read directory: {}",
+                cli_read_dir.display()
+            )
+        })?;
+        fs::write(profile_dir.join("base.sb"), "; base profile\n")
+            .wrap_err("failed to write test profile")?;
+        fs::write(
+            home.join(CONFIGS_SUFFIX).join("pi.yaml"),
+            "profiles:\n  - base.sb\nallow_read:\n  - ~/src/pi\n",
+        )
+        .wrap_err("failed to write test config")?;
+
+        let invocation = load_invocation_config(
+            &home,
+            Some(PathBuf::from("pi")),
+            None,
+            vec![],
+            vec![cli_read_dir.clone()],
+        )?;
+        let expected_config_read_dir = canonicalize(
+            config_read_dir,
+            "failed to resolve expected config allow-read directory",
+        )?;
+        let expected_cli_read_dir = canonicalize(
+            cli_read_dir,
+            "failed to resolve expected CLI allow-read directory",
+        )?;
+        let SandboxProfile::Text(actual) = invocation.profile else {
+            bail!("expected generated profile text")
+        };
+
+        assert_eq!(invocation.allow_env, Vec::<String>::new());
+        assert!(actual.contains(&format!(
+            "(literal \"{}\")",
+            expected_config_read_dir.display()
+        )));
+        assert!(actual.contains(&format!(
+            "(subpath \"{}\")",
+            expected_config_read_dir.display()
+        )));
+        assert!(actual.contains(&format!(
+            "(literal \"{}\")",
+            expected_cli_read_dir.display()
+        )));
+        assert!(actual.contains(&format!(
+            "(subpath \"{}\")",
+            expected_cli_read_dir.display()
+        )));
+        Ok(())
+    }
+
+    #[test]
     fn resolve_allow_read_dirs_resolves_relative_directories() -> Result<()> {
         let expected = canonicalize(Path::new("src"), "failed to resolve test directory")?;
 
-        let actual = resolve_allow_read_dirs(&[PathBuf::from("src")])?;
+        let actual = resolve_allow_read_dirs(Path::new("/Users/alice"), &[PathBuf::from("src")])?;
 
         assert_eq!(actual, vec![expected]);
         Ok(())
@@ -878,7 +1014,8 @@ allowed_envs:
     fn resolve_allow_read_dirs_rejects_files() -> Result<()> {
         let resolved_file = canonicalize(Path::new("Cargo.toml"), "failed to resolve test file")?;
 
-        let result = resolve_allow_read_dirs(&[PathBuf::from("Cargo.toml")]);
+        let result =
+            resolve_allow_read_dirs(Path::new("/Users/alice"), &[PathBuf::from("Cargo.toml")]);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
