@@ -12,7 +12,8 @@ profiles:
    - tools/nvim.sb
    - agents/pi.sb
 
-allowed_envs:
-  - ATLASSIAN_API_TOKEN
-  - ATLASSIAN_EMAIL
-  - ATLASSIAN_URL
+allow:
+  env:
+    - ATLASSIAN_API_TOKEN
+    - ATLASSIAN_EMAIL
+    - ATLASSIAN_URL

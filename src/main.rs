@@ -25,10 +25,17 @@ struct SeatbeltConfig {
     profiles: Vec<PathBuf>,
 
     #[serde(default)]
-    allowed_envs: Vec<String>,
+    allow: AllowConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllowConfig {
+    #[serde(default)]
+    env: Vec<String>,
 
     #[serde(default)]
-    allow_read: Vec<PathBuf>,
+    read: Vec<PathBuf>,
 }
 
 struct InvocationConfig {
@@ -180,17 +187,18 @@ fn load_invocation_config(
         )?,
     };
     let seatbelt_config = read_seatbelt_config(&config_path)?;
+    let SeatbeltConfig { profiles, allow } = seatbelt_config;
 
-    let mut allow_env = seatbelt_config.allowed_envs;
+    let mut allow_env = allow.env;
     allow_env.extend(cli_allow_env);
     validate_allowed_env_names(&allow_env)?;
 
-    let mut allow_read_paths = seatbelt_config.allow_read;
+    let mut allow_read_paths = allow.read;
     allow_read_paths.extend(cli_allow_read);
     let allow_read_dirs = resolve_allow_read_dirs(home, &allow_read_paths)?;
 
     let profile_root = home.join(PROFILES_SUFFIX);
-    let mut profile_text = compose_profile(&profile_root, &seatbelt_config.profiles)?;
+    let mut profile_text = compose_profile(&profile_root, &profiles)?;
     append_allow_read_dirs(&mut profile_text, &allow_read_dirs)?;
 
     Ok(InvocationConfig {
@@ -312,7 +320,7 @@ fn append_allow_read_dirs(profile: &mut String, allow_read_dirs: &[PathBuf]) -> 
         return Ok(());
     }
 
-    profile.push_str("\n; Additional read-only directories from --allow-read\n");
+    profile.push_str("\n; Additional read-only directories from allow.read/--allow-read\n");
     profile.push_str("(allow file-read*\n");
     for directory in allow_read_dirs {
         let directory = sbpl_string_literal(directory)?;
@@ -860,11 +868,12 @@ mod tests {
 profiles:
   - base.sb
   - agents/pi.sb
-allowed_envs:
-  - ATLASSIAN_API_TOKEN
-allow_read:
-  - ~/src/pi
-  - docs
+allow:
+  env:
+    - ATLASSIAN_API_TOKEN
+  read:
+    - ~/src/pi
+    - docs
 "#,
         )?;
 
@@ -872,9 +881,9 @@ allow_read:
             config.profiles,
             vec![PathBuf::from("base.sb"), PathBuf::from("agents/pi.sb")]
         );
-        assert_eq!(config.allowed_envs, vec!["ATLASSIAN_API_TOKEN"]);
+        assert_eq!(config.allow.env, vec!["ATLASSIAN_API_TOKEN"]);
         assert_eq!(
-            config.allow_read,
+            config.allow.read,
             vec![PathBuf::from("~/src/pi"), PathBuf::from("docs")]
         );
         Ok(())
@@ -957,7 +966,7 @@ allow_read:
             .wrap_err("failed to write test profile")?;
         fs::write(
             home.join(CONFIGS_SUFFIX).join("pi.yaml"),
-            "profiles:\n  - base.sb\nallow_read:\n  - ~/src/pi\n",
+            "profiles:\n  - base.sb\nallow:\n  read:\n    - ~/src/pi\n",
         )
         .wrap_err("failed to write test config")?;
 
@@ -1039,7 +1048,7 @@ allow_read:
 
         assert_eq!(
             actual,
-            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from --allow-read\n(allow file-read*\n    (literal \"/Users/alice/docs\")\n    (subpath \"/Users/alice/docs\")\n    (literal \"/Volumes/Shared Stuff\")\n    (subpath \"/Volumes/Shared Stuff\")\n)\n"
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/docs\")\n    (subpath \"/Users/alice/docs\")\n    (literal \"/Volumes/Shared Stuff\")\n    (subpath \"/Volumes/Shared Stuff\")\n)\n"
         );
         Ok(())
     }
@@ -1053,7 +1062,7 @@ allow_read:
 
         assert_eq!(
             actual,
-            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from --allow-read\n(allow file-read*\n    (literal \"/Users/alice/quoted\\\"directory\")\n    (subpath \"/Users/alice/quoted\\\"directory\")\n)\n"
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/quoted\\\"directory\")\n    (subpath \"/Users/alice/quoted\\\"directory\")\n)\n"
         );
         Ok(())
     }

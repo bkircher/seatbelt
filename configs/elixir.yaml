@@ -12,5 +12,6 @@ profiles:
    - tools/nvim.sb
    - agents/pi.sb
 
-allowed_envs:
-  - ERL_AFLAGS
+allow:
+  env:
+    - ERL_AFLAGS

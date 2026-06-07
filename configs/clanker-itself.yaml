@@ -9,6 +9,7 @@ profiles:
    - tools/nvim.sb
    - agents/pi.sb
 
-allow_read:
-  - ~/src/pi
-  - ~/src/obscura
+allow:
+  read:
+    - ~/src/pi
+    - ~/src/obscura

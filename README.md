@@ -67,7 +67,17 @@ For user-facing configuration, use `--config`. It allows SBPL profile
 composition, environment variable handling, and extra read-only directories.
 Use `--allow-read DIR` to add read-only access to an extra directory; `DIR` is
 resolved like `realpath` and must exist as a directory. Config files can also
-include `allow_read`; entries use the same rules, and `~` expands to `$HOME`.
+include `allow.read`; entries use the same rules, and `~` expands to `$HOME`.
+Use `allow.env` to pass through additional environment variables:
+
+```yaml
+allow:
+  env:
+    - ATLASSIAN_API_TOKEN
+  read:
+    - ~/src/pi
+```
+
 Network policies may come later.
 
 ## Debugging SBPL profiles
