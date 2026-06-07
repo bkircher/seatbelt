@@ -1,0 +1,19 @@
+; tools/mix.sb
+
+; Mix installs local Hex/rebar archives and escripts under ~/.mix.
+(define mix-dir (string-append home-dir "/.mix"))
+(allow file-read* file-write*
+    (literal mix-dir)
+    (subpath mix-dir))
+
+; Hex stores package manager config/cache under ~/.hex.
+(define hex-dir (string-append home-dir "/.hex"))
+(allow file-read* file-write*
+    (literal hex-dir)
+    (subpath hex-dir))
+
+; Erlang/OTP loads Homebrew NIF shared objects during TLS/crypto operations
+; such as `mix local.hex`. Keep this narrower than homebrew.sb while covering
+; paths like crypto.so and crypto_callback.so across Erlang versions.
+(allow file-read-data file-map-executable
+    (regex "^/opt/homebrew/Cellar/erlang/[^/]+/lib/erlang/lib/[^/]+/priv/lib/[^/]+\\.so$"))
