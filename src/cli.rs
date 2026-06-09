@@ -19,8 +19,8 @@ pub struct Cli {
 
     #[arg(
         long = "allow-read",
-        value_name = "DIR",
-        help = "Allow read-only access to an additional directory"
+        value_name = "PATH",
+        help = "Allow read-only access to an additional file or directory"
     )]
     pub allow_read: Vec<PathBuf>,
 

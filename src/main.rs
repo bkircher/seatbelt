@@ -54,6 +54,20 @@ enum SandboxProfile {
     Text(String),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AllowReadPath {
+    File(PathBuf),
+    Directory(PathBuf),
+}
+
+impl AllowReadPath {
+    fn path(&self) -> &Path {
+        match self {
+            Self::File(path) | Self::Directory(path) => path,
+        }
+    }
+}
+
 struct SandboxContext<'a> {
     profile: &'a SandboxProfile,
     resolved_users_dir: &'a Path,
@@ -167,11 +181,11 @@ fn load_invocation_config(
     if let Some(profile) = profile_arg {
         validate_allowed_env_names(&cli_allow_env)?;
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
-        let allow_read_dirs = resolve_allow_read_dirs(home, &cli_allow_read)?;
-        let profile = if allow_read_dirs.is_empty() {
+        let allow_read_paths = resolve_allow_read_paths(home, &cli_allow_read)?;
+        let profile = if allow_read_paths.is_empty() {
             SandboxProfile::File(profile)
         } else {
-            SandboxProfile::Text(compose_import_profile(&[profile], &allow_read_dirs)?)
+            SandboxProfile::Text(compose_import_profile(&[profile], &allow_read_paths)?)
         };
         return Ok(InvocationConfig {
             allow_env: cli_allow_env,
@@ -195,11 +209,11 @@ fn load_invocation_config(
 
     let mut allow_read_paths = allow.read;
     allow_read_paths.extend(cli_allow_read);
-    let allow_read_dirs = resolve_allow_read_dirs(home, &allow_read_paths)?;
+    let allow_read_paths = resolve_allow_read_paths(home, &allow_read_paths)?;
 
     let profile_root = home.join(PROFILES_SUFFIX);
     let mut profile_text = compose_profile(&profile_root, &profiles)?;
-    append_allow_read_dirs(&mut profile_text, &allow_read_dirs)?;
+    append_allow_read_paths(&mut profile_text, &allow_read_paths)?;
 
     Ok(InvocationConfig {
         allow_env,
@@ -207,18 +221,28 @@ fn load_invocation_config(
     })
 }
 
-fn resolve_allow_read_dirs(home: &Path, paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+fn resolve_allow_read_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowReadPath>> {
     let mut resolved_paths = Vec::with_capacity(paths.len());
     for path in paths {
         let expanded_path = expand_home_path(home, path);
         let resolved_path = canonicalize(&expanded_path, "failed to resolve --allow-read path")?;
-        if !resolved_path.is_dir() {
+        let metadata = fs::metadata(&resolved_path).wrap_err_with(|| {
+            format!(
+                "failed to inspect --allow-read path: {}",
+                resolved_path.display()
+            )
+        })?;
+        let allow_read_path = if metadata.is_file() {
+            AllowReadPath::File(resolved_path)
+        } else if metadata.is_dir() {
+            AllowReadPath::Directory(resolved_path)
+        } else {
             bail!(
-                "--allow-read path must be a directory: {}",
+                "--allow-read path must be a file or directory: {}",
                 resolved_path.display()
             );
-        }
-        resolved_paths.push(resolved_path);
+        };
+        resolved_paths.push(allow_read_path);
     }
 
     Ok(resolved_paths)
@@ -303,32 +327,39 @@ fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> 
     compose_import_profile(&imports, &[])
 }
 
-fn compose_import_profile(imports: &[PathBuf], allow_read_dirs: &[PathBuf]) -> Result<String> {
+fn compose_import_profile(
+    imports: &[PathBuf],
+    allow_read_paths: &[AllowReadPath],
+) -> Result<String> {
     let mut profile = String::from("(version 1)\n\n");
     for import in imports {
         profile.push_str("(import ");
         profile.push_str(&sbpl_string_literal(import)?);
         profile.push_str(")\n");
     }
-    append_allow_read_dirs(&mut profile, allow_read_dirs)?;
+    append_allow_read_paths(&mut profile, allow_read_paths)?;
 
     Ok(profile)
 }
 
-fn append_allow_read_dirs(profile: &mut String, allow_read_dirs: &[PathBuf]) -> Result<()> {
-    if allow_read_dirs.is_empty() {
+fn append_allow_read_paths(profile: &mut String, allow_read_paths: &[AllowReadPath]) -> Result<()> {
+    if allow_read_paths.is_empty() {
         return Ok(());
     }
 
-    profile.push_str("\n; Additional read-only directories from allow.read/--allow-read\n");
+    profile.push_str("\n; Additional read-only paths from allow.read/--allow-read\n");
     profile.push_str("(allow file-read*\n");
-    for directory in allow_read_dirs {
-        let directory = sbpl_string_literal(directory)?;
+    for path in allow_read_paths {
+        let literal = sbpl_string_literal(path.path())?;
         profile.push_str("    (literal ");
-        profile.push_str(&directory);
-        profile.push_str(")\n    (subpath ");
-        profile.push_str(&directory);
+        profile.push_str(&literal);
         profile.push_str(")\n");
+
+        if matches!(path, AllowReadPath::Directory(_)) {
+            profile.push_str("    (subpath ");
+            profile.push_str(&literal);
+            profile.push_str(")\n");
+        }
     }
     profile.push_str(")\n");
 
@@ -938,12 +969,12 @@ allow:
     }
 
     #[test]
-    fn load_invocation_config_combines_config_and_cli_allow_read_dirs() -> Result<()> {
+    fn load_invocation_config_combines_config_and_cli_allow_read_paths() -> Result<()> {
         let temp = TestTempDir::new("config-allow-read")?;
         let home = temp.path().join("home");
         let profile_dir = home.join(PROFILES_SUFFIX);
         let config_read_dir = home.join("src/pi");
-        let cli_read_dir = temp.path().join("obscura");
+        let cli_read_file = temp.path().join("obscura.json");
         fs::create_dir_all(&profile_dir).wrap_err_with(|| {
             format!(
                 "failed to create profile directory: {}",
@@ -956,10 +987,10 @@ allow:
                 config_read_dir.display()
             )
         })?;
-        fs::create_dir_all(&cli_read_dir).wrap_err_with(|| {
+        fs::write(&cli_read_file, "{}\n").wrap_err_with(|| {
             format!(
-                "failed to create CLI allow-read directory: {}",
-                cli_read_dir.display()
+                "failed to create CLI allow-read file: {}",
+                cli_read_file.display()
             )
         })?;
         fs::write(profile_dir.join("base.sb"), "; base profile\n")
@@ -975,15 +1006,15 @@ allow:
             Some(PathBuf::from("pi")),
             None,
             vec![],
-            vec![cli_read_dir.clone()],
+            vec![cli_read_file.clone()],
         )?;
         let expected_config_read_dir = canonicalize(
             config_read_dir,
             "failed to resolve expected config allow-read directory",
         )?;
-        let expected_cli_read_dir = canonicalize(
-            cli_read_dir,
-            "failed to resolve expected CLI allow-read directory",
+        let expected_cli_read_file = canonicalize(
+            cli_read_file,
+            "failed to resolve expected CLI allow-read file",
         )?;
         let SandboxProfile::Text(actual) = invocation.profile else {
             bail!("expected generated profile text")
@@ -1000,69 +1031,66 @@ allow:
         )));
         assert!(actual.contains(&format!(
             "(literal \"{}\")",
-            expected_cli_read_dir.display()
+            expected_cli_read_file.display()
         )));
-        assert!(actual.contains(&format!(
+        assert!(!actual.contains(&format!(
             "(subpath \"{}\")",
-            expected_cli_read_dir.display()
+            expected_cli_read_file.display()
         )));
         Ok(())
     }
 
     #[test]
-    fn resolve_allow_read_dirs_resolves_relative_directories() -> Result<()> {
+    fn resolve_allow_read_paths_resolves_relative_directories() -> Result<()> {
         let expected = canonicalize(Path::new("src"), "failed to resolve test directory")?;
 
-        let actual = resolve_allow_read_dirs(Path::new("/Users/alice"), &[PathBuf::from("src")])?;
+        let actual = resolve_allow_read_paths(Path::new("/Users/alice"), &[PathBuf::from("src")])?;
 
-        assert_eq!(actual, vec![expected]);
+        assert_eq!(actual, vec![AllowReadPath::Directory(expected)]);
         Ok(())
     }
 
     #[test]
-    fn resolve_allow_read_dirs_rejects_files() -> Result<()> {
-        let resolved_file = canonicalize(Path::new("Cargo.toml"), "failed to resolve test file")?;
+    fn resolve_allow_read_paths_resolves_files() -> Result<()> {
+        let expected = canonicalize(Path::new("Cargo.toml"), "failed to resolve test file")?;
 
-        let result =
-            resolve_allow_read_dirs(Path::new("/Users/alice"), &[PathBuf::from("Cargo.toml")]);
+        let actual =
+            resolve_allow_read_paths(Path::new("/Users/alice"), &[PathBuf::from("Cargo.toml")])?;
 
-        assert_eq!(
-            result.err().map(|error| error.to_string()),
-            Some(format!(
-                "--allow-read path must be a directory: {}",
-                resolved_file.display()
-            ))
-        );
+        assert_eq!(actual, vec![AllowReadPath::File(expected)]);
         Ok(())
     }
 
     #[test]
-    fn compose_import_profile_appends_allow_read_dirs() -> Result<()> {
+    fn compose_import_profile_appends_allow_read_paths() -> Result<()> {
         let actual = compose_import_profile(
             &[PathBuf::from("/profiles/raw.sb")],
             &[
-                PathBuf::from("/Users/alice/docs"),
-                PathBuf::from("/Volumes/Shared Stuff"),
+                AllowReadPath::Directory(PathBuf::from("/Users/alice/docs")),
+                AllowReadPath::File(PathBuf::from("/Users/alice/.zshrc")),
+                AllowReadPath::Directory(PathBuf::from("/Volumes/Shared Stuff")),
             ],
         )?;
 
         assert_eq!(
             actual,
-            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/docs\")\n    (subpath \"/Users/alice/docs\")\n    (literal \"/Volumes/Shared Stuff\")\n    (subpath \"/Volumes/Shared Stuff\")\n)\n"
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only paths from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/docs\")\n    (subpath \"/Users/alice/docs\")\n    (literal \"/Users/alice/.zshrc\")\n    (literal \"/Volumes/Shared Stuff\")\n    (subpath \"/Volumes/Shared Stuff\")\n)\n"
         );
         Ok(())
     }
 
     #[test]
-    fn compose_import_profile_escapes_allow_read_dirs() -> Result<()> {
+    fn compose_import_profile_escapes_allow_read_paths() -> Result<()> {
         let actual = compose_import_profile(
             &[PathBuf::from("/profiles/raw.sb")],
-            &[PathBuf::from("/Users/alice/quoted\"directory")],
+            &[AllowReadPath::File(PathBuf::from(
+                "/Users/alice/quoted\"file",
+            ))],
         )?;
 
         assert_eq!(
             actual,
-            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only directories from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/quoted\\\"directory\")\n    (subpath \"/Users/alice/quoted\\\"directory\")\n)\n"
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only paths from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/quoted\\\"file\")\n)\n"
         );
         Ok(())
     }
