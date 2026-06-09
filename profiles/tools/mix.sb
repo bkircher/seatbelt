@@ -1,5 +1,9 @@
 ; tools/mix.sb
 
+; IEx reads user startup customizations from ~/.iex.exs when present.
+(allow file-read*
+    (literal (string-append home-dir "/.iex.exs")))
+
 ; Mix installs local Hex/rebar archives and escripts under ~/.mix.
 (define mix-dir (string-append home-dir "/.mix"))
 (allow file-read* file-write*
