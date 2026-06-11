@@ -7,10 +7,10 @@ use std::{
     process::Command as ProcessCommand,
 };
 
-use eyre::{Context, ErrReport, Result, bail, eyre};
+use eyre::{Context, Result, bail, eyre};
 use serde::Deserialize;
 
-pub mod cli;
+mod cli;
 
 const DEFAULT_CONFIG_SUFFIX: &str = ".config/seatbelt/default.yaml";
 const CONFIGS_SUFFIX: &str = ".config/seatbelt";
@@ -88,7 +88,7 @@ impl EnvSource for ProcessEnv {
     }
 }
 
-fn main() -> Result<(), ErrReport> {
+fn main() -> Result<()> {
     use clap::Parser;
 
     color_eyre::install().wrap_err("failed to install color-eyre error reports")?;
@@ -432,13 +432,13 @@ fn build_final_command(
 
     final_command.extend([
         OsString::from("-D"),
-        define_path("_USERS_DIR", sandbox_context.resolved_users_dir),
+        env_pair_path("_USERS_DIR", sandbox_context.resolved_users_dir),
         OsString::from("-D"),
-        define_path("_HOME", sandbox_context.resolved_home),
+        env_pair_path("_HOME", sandbox_context.resolved_home),
         OsString::from("-D"),
-        define_path("_PROJECT_DIR", sandbox_context.project_dir),
+        env_pair_path("_PROJECT_DIR", sandbox_context.project_dir),
         OsString::from("-D"),
-        define_path("_TMPDIR", sandbox_context.resolved_tmpdir),
+        env_pair_path("_TMPDIR", sandbox_context.resolved_tmpdir),
         OsString::from("/usr/bin/env"),
         OsString::from("-i"),
         env_pair_path("HOME", sandbox_context.resolved_home),
@@ -543,10 +543,6 @@ fn git_root(project_dir: &Path) -> Result<Option<PathBuf>> {
     }
 
     Ok(Some(PathBuf::from(trimmed)))
-}
-
-fn define_path(name: &str, value: &Path) -> OsString {
-    env_pair_path(name, value)
 }
 
 fn env_pair_path(name: &str, value: &Path) -> OsString {
