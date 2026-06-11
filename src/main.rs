@@ -606,12 +606,13 @@ fn shell_quote(arg: &OsStr) -> String {
         return arg.to_string_lossy().into_owned();
     }
 
+    let text = arg.to_string_lossy();
     let mut quoted = String::from("'");
-    for byte in bytes {
-        if *byte == b'\'' {
+    for character in text.chars() {
+        if character == '\'' {
             quoted.push_str("'\\''");
         } else {
-            quoted.push(char::from(*byte));
+            quoted.push(character);
         }
     }
     quoted.push('\'');
@@ -1093,6 +1094,15 @@ allow:
             "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read-only paths from allow.read/--allow-read\n(allow file-read*\n    (literal \"/Users/alice/quoted\\\"file\")\n)\n"
         );
         Ok(())
+    }
+
+    #[test]
+    fn shell_words_preserves_non_ascii_arguments() {
+        let command = [os("echo"), os("café")];
+
+        let actual = shell_words(&command);
+
+        assert_eq!(actual, "echo 'café'");
     }
 
     #[test]
