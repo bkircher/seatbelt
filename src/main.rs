@@ -11,6 +11,9 @@ use eyre::{Context, Result, bail, eyre};
 use serde::Deserialize;
 
 mod cli;
+mod env_name;
+
+use env_name::EnvName;
 
 const DEFAULT_CONFIG_SUFFIX: &str = ".config/seatbelt/default.yaml";
 const CONFIGS_SUFFIX: &str = ".config/seatbelt";
@@ -32,7 +35,7 @@ struct SeatbeltConfig {
 #[serde(deny_unknown_fields)]
 struct AllowConfig {
     #[serde(default)]
-    env: Vec<String>,
+    env: Vec<EnvName>,
 
     #[serde(default)]
     read: Vec<PathBuf>,
@@ -42,7 +45,7 @@ struct AllowConfig {
 }
 
 struct InvocationConfig {
-    allow_env: Vec<String>,
+    allow_env: Vec<EnvName>,
     profile: SandboxProfile,
     allow_read_paths: Vec<AllowPath>,
     allow_write_paths: Vec<AllowPath>,
@@ -192,7 +195,7 @@ fn load_invocation_config(
     home: &Path,
     config_arg: Option<PathBuf>,
     profile_arg: Option<PathBuf>,
-    cli_allow_env: Vec<String>,
+    cli_allow_env: Vec<EnvName>,
     cli_allow_read: Vec<PathBuf>,
     cli_allow_write: Vec<PathBuf>,
 ) -> Result<InvocationConfig> {
@@ -201,7 +204,6 @@ fn load_invocation_config(
     }
 
     if let Some(profile) = profile_arg {
-        validate_allowed_env_names(&cli_allow_env)?;
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
         let allow_read_paths = resolve_allow_read_paths(home, &cli_allow_read)?;
         let allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
@@ -234,7 +236,6 @@ fn load_invocation_config(
 
     let mut allow_env = allow.env;
     allow_env.extend(cli_allow_env);
-    validate_allowed_env_names(&allow_env)?;
 
     let mut allow_read_paths = allow.read;
     allow_read_paths.extend(cli_allow_read);
@@ -575,7 +576,7 @@ fn print_profile(profile: &SandboxProfile) -> Result<()> {
 fn build_final_command(
     sandbox_context: &SandboxContext<'_>,
     env_source: &impl EnvSource,
-    allow_env: &[String],
+    allow_env: &[EnvName],
     command: &[OsString],
 ) -> Result<Vec<OsString>> {
     let mut final_command = vec![OsString::from(SANDBOX_EXEC_PATH)];
@@ -635,29 +636,15 @@ fn build_final_command(
     append_if_set(&mut final_command, env_source, "XDG_RUNTIME_DIR");
 
     for env_name in allow_env {
-        if !is_valid_env_name(env_name) {
-            bail!("invalid environment variable name: {env_name}");
-        }
-
         let value = env_source
-            .var_os(env_name)
+            .var_os(env_name.as_str())
             .ok_or_else(|| eyre!("environment variable is not set: {env_name}"))?;
-        final_command.push(env_pair(env_name, value));
+        final_command.push(env_pair(env_name.as_str(), value));
     }
 
     final_command.extend(command.iter().cloned());
 
     Ok(final_command)
-}
-
-fn validate_allowed_env_names(allow_env: &[String]) -> Result<()> {
-    for env_name in allow_env {
-        if !is_valid_env_name(env_name) {
-            bail!("invalid environment variable name: {env_name}");
-        }
-    }
-
-    Ok(())
 }
 
 fn required_env_path(name: &str) -> Result<PathBuf> {
@@ -721,28 +708,6 @@ fn append_if_set(command: &mut Vec<OsString>, env_source: &impl EnvSource, name:
     if let Some(value) = env_source.var_os(name) {
         command.push(env_pair(name, value));
     }
-}
-
-fn is_valid_env_name(name: &str) -> bool {
-    let mut chars = name.chars();
-
-    let Some(first) = chars.next() else {
-        return false;
-    };
-
-    if !is_ascii_alpha_or_underscore(first) {
-        return false;
-    }
-
-    chars.all(is_ascii_alnum_or_underscore)
-}
-
-fn is_ascii_alpha_or_underscore(character: char) -> bool {
-    character == '_' || character.is_ascii_alphabetic()
-}
-
-fn is_ascii_alnum_or_underscore(character: char) -> bool {
-    character == '_' || character.is_ascii_alphanumeric()
 }
 
 fn shell_words(args: &[OsString]) -> String {
@@ -838,6 +803,10 @@ mod tests {
         OsString::from(value)
     }
 
+    fn env_name(value: &str) -> Result<EnvName> {
+        EnvName::try_from(value.to_owned()).map_err(Into::into)
+    }
+
     struct TestTempDir {
         path: PathBuf,
     }
@@ -914,7 +883,7 @@ mod tests {
         let actual = build_final_command(
             &context,
             &env_source,
-            &["EXTRA_TOKEN".to_owned()],
+            &[env_name("EXTRA_TOKEN")?],
             &[os("echo"), os("hello world")],
         )?;
 
@@ -1073,7 +1042,7 @@ allow:
             config.profiles,
             vec![PathBuf::from("base.sb"), PathBuf::from("agents/pi.sb")]
         );
-        assert_eq!(config.allow.env, vec!["ATLASSIAN_API_TOKEN"]);
+        assert_eq!(config.allow.env, vec![env_name("ATLASSIAN_API_TOKEN")?]);
         assert_eq!(
             config.allow.read,
             vec![PathBuf::from("~/src/pi"), PathBuf::from("docs")]
@@ -1187,7 +1156,7 @@ allow:
             bail!("expected generated profile text")
         };
 
-        assert_eq!(invocation.allow_env, Vec::<String>::new());
+        assert_eq!(invocation.allow_env, Vec::<EnvName>::new());
         assert_eq!(
             invocation.allow_read_paths,
             vec![
@@ -1268,7 +1237,7 @@ allow:
             bail!("expected generated profile text")
         };
 
-        assert_eq!(invocation.allow_env, Vec::<String>::new());
+        assert_eq!(invocation.allow_env, Vec::<EnvName>::new());
         assert_eq!(invocation.allow_read_paths, Vec::<AllowPath>::new());
         assert_eq!(
             invocation.allow_write_paths,
@@ -1659,44 +1628,19 @@ allow:
     }
 
     #[test]
-    fn validates_environment_variable_names() {
-        assert!(is_valid_env_name("TOKEN"));
-        assert!(is_valid_env_name("_TOKEN_1"));
-        assert!(!is_valid_env_name(""));
-        assert!(!is_valid_env_name("1TOKEN"));
-        assert!(!is_valid_env_name("BAD-NAME"));
-        assert!(!is_valid_env_name("BAD.NAME"));
-    }
-
-    #[test]
-    fn build_final_command_rejects_invalid_allow_env_name() {
+    fn build_final_command_rejects_unset_allow_env_name() -> Result<()> {
         let env_source = empty_env();
 
         let profile = file_profile();
         let context = sandbox_context(&profile);
 
         let result =
-            build_final_command(&context, &env_source, &["1TOKEN".to_owned()], &[os("true")]);
-
-        assert_eq!(
-            result.err().map(|error| error.to_string()),
-            Some("invalid environment variable name: 1TOKEN".to_owned())
-        );
-    }
-
-    #[test]
-    fn build_final_command_rejects_unset_allow_env_name() {
-        let env_source = empty_env();
-
-        let profile = file_profile();
-        let context = sandbox_context(&profile);
-
-        let result =
-            build_final_command(&context, &env_source, &["TOKEN".to_owned()], &[os("true")]);
+            build_final_command(&context, &env_source, &[env_name("TOKEN")?], &[os("true")]);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
             Some("environment variable is not set: TOKEN".to_owned())
         );
+        Ok(())
     }
 }

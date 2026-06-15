@@ -2,6 +2,8 @@ use std::{ffi::OsString, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::env_name::EnvName;
+
 #[derive(Debug, PartialEq, Eq, Parser)]
 #[command(
     name = "seatbelt",
@@ -15,7 +17,7 @@ pub struct Cli {
         value_name = "NAME",
         help = "Pass through one additional environment variable"
     )]
-    pub allow_env: Vec<String>,
+    pub allow_env: Vec<EnvName>,
 
     #[arg(
         long = "allow-read",
@@ -78,6 +80,36 @@ pub struct RunArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_repeated_allow_env_options() {
+        let actual = Cli::parse_from([
+            "seatbelt",
+            "--allow-env",
+            "TOKEN",
+            "--allow-env",
+            "_TOKEN_1",
+            "run",
+            "true",
+        ]);
+
+        let actual_names = actual
+            .allow_env
+            .iter()
+            .map(EnvName::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(actual_names, vec!["TOKEN", "_TOKEN_1"]);
+    }
+
+    #[test]
+    fn rejects_invalid_allow_env_options() {
+        let result = Cli::try_parse_from(["seatbelt", "--allow-env", "1TOKEN", "run", "true"]);
+
+        assert_eq!(
+            result.err().map(|error| error.kind()),
+            Some(clap::error::ErrorKind::ValueValidation)
+        );
+    }
 
     #[test]
     fn parses_repeated_allow_read_options() {
