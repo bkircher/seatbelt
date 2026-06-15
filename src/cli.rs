@@ -47,12 +47,6 @@ pub struct Cli {
     )]
     pub profile: Option<PathBuf>,
 
-    #[arg(
-        long,
-        help = "Print the final sandbox-exec command without executing it"
-    )]
-    pub dry_run: bool,
-
     #[command(subcommand)]
     pub command: Command,
 }
@@ -68,6 +62,12 @@ pub enum Command {
 
 #[derive(Debug, PartialEq, Eq, Args)]
 pub struct RunArgs {
+    #[arg(
+        long,
+        help = "Print the final sandbox-exec command without executing it"
+    )]
+    pub dry_run: bool,
+
     #[arg(
         required = true,
         value_name = "COMMAND",
@@ -144,6 +144,29 @@ mod tests {
         assert_eq!(
             actual.allow_write,
             vec![PathBuf::from("dist"), PathBuf::from("/opt/output")]
+        );
+    }
+
+    #[test]
+    fn parses_dry_run_on_run_subcommand() {
+        let actual = Cli::parse_from(["seatbelt", "run", "--dry-run", "true"]);
+
+        assert_eq!(
+            actual.command,
+            Command::Run(RunArgs {
+                dry_run: true,
+                command: vec![OsString::from("true")]
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_dry_run_on_print_profile_command() {
+        let result = Cli::try_parse_from(["seatbelt", "--dry-run", "print-profile"]);
+
+        assert_eq!(
+            result.err().map(|error| error.kind()),
+            Some(clap::error::ErrorKind::UnknownArgument)
         );
     }
 }

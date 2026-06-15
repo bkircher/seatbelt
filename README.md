@@ -58,8 +58,8 @@ seatbelt --config acme run pi
 seatbelt --allow-read ~/src/shared --allow-write ~/build-dir run pi
 ```
 
-Use `seatbelt print-profile` to inspect the composed sandbox profile, or add
-`--dry-run` to print the final `sandbox-exec` command.
+Use `seatbelt print-profile` to inspect the composed sandbox profile, or run
+`seatbelt run --dry-run ...` to print the final `sandbox-exec` command.
 
 ## Configuration
 

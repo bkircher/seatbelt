@@ -118,7 +118,7 @@ fn main() -> Result<()> {
         }
         cli::Command::Run(run_args) => run(RunConfig {
             invocation,
-            dry_run: cli.dry_run,
+            dry_run: run_args.dry_run,
             command: run_args.command,
         })
         .wrap_err("run command failed"),
