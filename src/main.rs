@@ -76,6 +76,42 @@ impl AllowPath {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum AllowAccess {
+    Read,
+    Write,
+}
+
+impl AllowAccess {
+    fn option_name(self) -> &'static str {
+        match self {
+            Self::Read => "--allow-read",
+            Self::Write => "--allow-write",
+        }
+    }
+
+    fn source_label(self) -> &'static str {
+        match self {
+            Self::Read => "allow.read/--allow-read",
+            Self::Write => "allow.write/--allow-write",
+        }
+    }
+
+    fn comment(self) -> &'static str {
+        match self {
+            Self::Read => "Additional read-only paths from allow.read/--allow-read",
+            Self::Write => "Additional read/write paths from allow.write/--allow-write",
+        }
+    }
+
+    fn sbpl_permissions(self) -> &'static str {
+        match self {
+            Self::Read => "file-read*",
+            Self::Write => "file-read* file-write*",
+        }
+    }
+}
+
 struct SandboxContext<'a> {
     profile: &'a SandboxProfile,
     resolved_users_dir: &'a Path,
@@ -151,14 +187,14 @@ fn run(config: RunConfig) -> Result<()> {
     }
 
     for warning in project_dir_redundancy_warnings(
-        "allow.read/--allow-read",
+        AllowAccess::Read,
         &config.invocation.allow_read_paths,
         &project_dir,
     ) {
         eprintln!("{warning}");
     }
     for warning in project_dir_redundancy_warnings(
-        "allow.write/--allow-write",
+        AllowAccess::Write,
         &config.invocation.allow_write_paths,
         &project_dir,
     ) {
@@ -205,8 +241,8 @@ fn load_invocation_config(
 
     if let Some(profile) = profile_arg {
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
-        let allow_read_paths = resolve_allow_read_paths(home, &cli_allow_read)?;
-        let allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
+        let allow_read_paths = resolve_allow_paths(home, &cli_allow_read, AllowAccess::Read)?;
+        let allow_write_paths = resolve_allow_paths(home, &cli_allow_write, AllowAccess::Write)?;
         let profile = if allow_read_paths.is_empty() && allow_write_paths.is_empty() {
             SandboxProfile::File(profile)
         } else {
@@ -239,16 +275,16 @@ fn load_invocation_config(
 
     let mut allow_read_paths = allow.read;
     allow_read_paths.extend(cli_allow_read);
-    let allow_read_paths = resolve_allow_read_paths(home, &allow_read_paths)?;
+    let allow_read_paths = resolve_allow_paths(home, &allow_read_paths, AllowAccess::Read)?;
 
     let mut allow_write_paths = allow.write;
     allow_write_paths.extend(cli_allow_write);
-    let allow_write_paths = resolve_allow_write_paths(home, &allow_write_paths)?;
+    let allow_write_paths = resolve_allow_paths(home, &allow_write_paths, AllowAccess::Write)?;
 
     let profile_root = home.join(PROFILES_SUFFIX);
     let mut profile_text = compose_profile(&profile_root, &profiles)?;
-    append_allow_read_paths(&mut profile_text, &allow_read_paths)?;
-    append_allow_write_paths(&mut profile_text, &allow_write_paths)?;
+    append_allow_paths(&mut profile_text, &allow_read_paths, AllowAccess::Read)?;
+    append_allow_paths(&mut profile_text, &allow_write_paths, AllowAccess::Write)?;
 
     Ok(InvocationConfig {
         allow_env,
@@ -258,29 +294,12 @@ fn load_invocation_config(
     })
 }
 
-fn resolve_allow_read_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowPath>> {
-    let resolved_paths = resolve_allow_paths(home, paths, "--allow-read")?;
-    if !resolved_paths.is_empty() {
-        reject_overly_broad_directories(home, &resolved_paths, "--allow-read")?;
-    }
-
-    Ok(resolved_paths)
-}
-
-fn resolve_allow_write_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowPath>> {
-    let resolved_paths = resolve_allow_paths(home, paths, "--allow-write")?;
-    if !resolved_paths.is_empty() {
-        reject_overly_broad_directories(home, &resolved_paths, "--allow-write")?;
-    }
-
-    Ok(resolved_paths)
-}
-
 fn resolve_allow_paths(
     home: &Path,
     paths: &[PathBuf],
-    option_name: &'static str,
+    access: AllowAccess,
 ) -> Result<Vec<AllowPath>> {
+    let option_name = access.option_name();
     let mut resolved_paths = Vec::with_capacity(paths.len());
     for path in paths {
         let expanded_path = expand_home_path(home, path);
@@ -309,14 +328,19 @@ fn resolve_allow_paths(
         resolved_paths.push(allow_path);
     }
 
+    if !resolved_paths.is_empty() {
+        reject_overly_broad_directories(home, &resolved_paths, access)?;
+    }
+
     Ok(resolved_paths)
 }
 
 fn reject_overly_broad_directories(
     home: &Path,
     paths: &[AllowPath],
-    option_name: &'static str,
+    access: AllowAccess,
 ) -> Result<()> {
+    let option_name = access.option_name();
     let broad_directories = broad_directory_paths(home)?;
 
     for path in paths {
@@ -364,16 +388,18 @@ fn is_overly_broad_directory(path: &Path, broad_directories: &[PathBuf]) -> bool
 }
 
 fn project_dir_redundancy_warnings(
-    option_name: &str,
+    access: AllowAccess,
     paths: &[AllowPath],
     project_dir: &Path,
 ) -> Vec<String> {
+    let source_label = access.source_label();
+
     paths
         .iter()
         .filter(|path| path.path().starts_with(project_dir))
         .map(|path| {
             format!(
-                "warning: {option_name} {} is already covered by $PROJECT_DIR",
+                "warning: {source_label} {} is already covered by $PROJECT_DIR",
                 path.path().display()
             )
         })
@@ -470,44 +496,27 @@ fn compose_import_profile(
         profile.push_str(&sbpl_string_literal(import)?);
         profile.push_str(")\n");
     }
-    append_allow_read_paths(&mut profile, allow_read_paths)?;
-    append_allow_write_paths(&mut profile, allow_write_paths)?;
+    append_allow_paths(&mut profile, allow_read_paths, AllowAccess::Read)?;
+    append_allow_paths(&mut profile, allow_write_paths, AllowAccess::Write)?;
 
     Ok(profile)
 }
 
-fn append_allow_read_paths(profile: &mut String, allow_read_paths: &[AllowPath]) -> Result<()> {
-    if allow_read_paths.is_empty() {
+fn append_allow_paths(
+    profile: &mut String,
+    allow_paths: &[AllowPath],
+    access: AllowAccess,
+) -> Result<()> {
+    if allow_paths.is_empty() {
         return Ok(());
     }
 
-    profile.push_str("\n; Additional read-only paths from allow.read/--allow-read\n");
-    profile.push_str("(allow file-read*\n");
-    for path in allow_read_paths {
-        let literal = sbpl_string_literal(path.path())?;
-        profile.push_str("    (literal ");
-        profile.push_str(&literal);
-        profile.push_str(")\n");
-
-        if matches!(path, AllowPath::Directory(_)) {
-            profile.push_str("    (subpath ");
-            profile.push_str(&literal);
-            profile.push_str(")\n");
-        }
-    }
-    profile.push_str(")\n");
-
-    Ok(())
-}
-
-fn append_allow_write_paths(profile: &mut String, allow_write_paths: &[AllowPath]) -> Result<()> {
-    if allow_write_paths.is_empty() {
-        return Ok(());
-    }
-
-    profile.push_str("\n; Additional read/write paths from allow.write/--allow-write\n");
-    profile.push_str("(allow file-read* file-write*\n");
-    for path in allow_write_paths {
+    profile.push_str("\n; ");
+    profile.push_str(access.comment());
+    profile.push_str("\n(allow ");
+    profile.push_str(access.sbpl_permissions());
+    profile.push('\n');
+    for path in allow_paths {
         let literal = sbpl_string_literal(path.path())?;
         profile.push_str("    (literal ");
         profile.push_str(&literal);
@@ -1261,13 +1270,13 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_write_paths_rejects_nonexistent_paths() {
+    fn resolve_allow_paths_rejects_write_nonexistent_paths() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
         let missing = home.join("missing");
 
-        let result = resolve_allow_write_paths(&home, std::slice::from_ref(&missing));
+        let result = resolve_allow_paths(&home, std::slice::from_ref(&missing), AllowAccess::Write);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1279,12 +1288,12 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_write_paths_rejects_root_directory() {
+    fn resolve_allow_paths_rejects_write_root_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
 
-        let result = resolve_allow_write_paths(&home, &[PathBuf::from("/")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("/")], AllowAccess::Write);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1293,13 +1302,13 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_write_paths_rejects_home_directory() {
+    fn resolve_allow_paths_rejects_write_home_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
         let expected_home = canonicalized(&home, "failed to resolve expected home");
 
-        let result = resolve_allow_write_paths(&home, &[PathBuf::from("~")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("~")], AllowAccess::Write);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1311,14 +1320,15 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_write_paths_rejects_home_documents_directory() {
+    fn resolve_allow_paths_rejects_write_home_documents_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         let documents = home.join("Documents");
         create_dir_all(&documents);
         let expected_documents = canonicalized(&documents, "failed to resolve expected Documents");
 
-        let result = resolve_allow_write_paths(&home, &[PathBuf::from("~/Documents")]);
+        let result =
+            resolve_allow_paths(&home, &[PathBuf::from("~/Documents")], AllowAccess::Write);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1330,14 +1340,14 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_write_paths_rejects_home_src_directory() {
+    fn resolve_allow_paths_rejects_write_home_src_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         let src = home.join("src");
         create_dir_all(&src);
         let expected_src = canonicalized(&src, "failed to resolve expected src");
 
-        let result = resolve_allow_write_paths(&home, &[PathBuf::from("~/src")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("~/src")], AllowAccess::Write);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1349,13 +1359,13 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_write_paths_rejects_users_directory() {
+    fn resolve_allow_paths_rejects_write_users_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
         let expected_users_dir = canonicalized(temp.path(), "failed to resolve expected users dir");
 
-        let result = resolve_allow_write_paths(&home, &[temp.path().to_path_buf()]);
+        let result = resolve_allow_paths(&home, &[temp.path().to_path_buf()], AllowAccess::Write);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1371,12 +1381,12 @@ allow:
         let project_dir = Path::new("/Users/alice/project");
 
         let read_warnings = project_dir_redundancy_warnings(
-            "allow.read/--allow-read",
+            AllowAccess::Read,
             &[AllowPath::Directory(PathBuf::from("/Users/alice/project"))],
             project_dir,
         );
         let write_warnings = project_dir_redundancy_warnings(
-            "allow.write/--allow-write",
+            AllowAccess::Write,
             &[AllowPath::File(PathBuf::from(
                 "/Users/alice/project/output.log",
             ))],
@@ -1400,13 +1410,13 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_rejects_nonexistent_paths() {
+    fn resolve_allow_paths_rejects_read_nonexistent_paths() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
         let missing = home.join("missing");
 
-        let result = resolve_allow_read_paths(&home, std::slice::from_ref(&missing));
+        let result = resolve_allow_paths(&home, std::slice::from_ref(&missing), AllowAccess::Read);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1418,12 +1428,12 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_rejects_root_directory() {
+    fn resolve_allow_paths_rejects_read_root_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
 
-        let result = resolve_allow_read_paths(&home, &[PathBuf::from("/")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("/")], AllowAccess::Read);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1432,13 +1442,13 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_rejects_home_directory() {
+    fn resolve_allow_paths_rejects_read_home_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
         let expected_home = canonicalized(&home, "failed to resolve expected home");
 
-        let result = resolve_allow_read_paths(&home, &[PathBuf::from("~")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("~")], AllowAccess::Read);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1450,14 +1460,14 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_rejects_home_documents_directory() {
+    fn resolve_allow_paths_rejects_read_home_documents_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         let documents = home.join("Documents");
         create_dir_all(&documents);
         let expected_documents = canonicalized(&documents, "failed to resolve expected Documents");
 
-        let result = resolve_allow_read_paths(&home, &[PathBuf::from("~/Documents")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("~/Documents")], AllowAccess::Read);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1469,14 +1479,14 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_rejects_home_src_directory() {
+    fn resolve_allow_paths_rejects_read_home_src_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         let src = home.join("src");
         create_dir_all(&src);
         let expected_src = canonicalized(&src, "failed to resolve expected src");
 
-        let result = resolve_allow_read_paths(&home, &[PathBuf::from("~/src")]);
+        let result = resolve_allow_paths(&home, &[PathBuf::from("~/src")], AllowAccess::Read);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1488,13 +1498,13 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_rejects_users_directory() {
+    fn resolve_allow_paths_rejects_read_users_directory() {
         let temp = temp_dir();
         let home = temp.path().join("home");
         create_dir_all(&home);
         let expected_users_dir = canonicalized(temp.path(), "failed to resolve expected users dir");
 
-        let result = resolve_allow_read_paths(&home, &[temp.path().to_path_buf()]);
+        let result = resolve_allow_paths(&home, &[temp.path().to_path_buf()], AllowAccess::Read);
 
         assert_eq!(
             result.err().map(|error| error.to_string()),
@@ -1506,23 +1516,28 @@ allow:
     }
 
     #[test]
-    fn resolve_allow_read_paths_resolves_relative_directories() {
+    fn resolve_allow_paths_resolves_read_relative_directories() {
         let home = must(required_env_path("HOME"));
         let expected = canonicalized(Path::new("src"), "failed to resolve test directory");
 
-        let actual = must(resolve_allow_read_paths(&home, &[PathBuf::from("src")]));
+        let actual = must(resolve_allow_paths(
+            &home,
+            &[PathBuf::from("src")],
+            AllowAccess::Read,
+        ));
 
         assert_eq!(actual, vec![AllowPath::Directory(expected)]);
     }
 
     #[test]
-    fn resolve_allow_read_paths_resolves_files() {
+    fn resolve_allow_paths_resolves_read_files() {
         let home = must(required_env_path("HOME"));
         let expected = canonicalized(Path::new("Cargo.toml"), "failed to resolve test file");
 
-        let actual = must(resolve_allow_read_paths(
+        let actual = must(resolve_allow_paths(
             &home,
             &[PathBuf::from("Cargo.toml")],
+            AllowAccess::Read,
         ));
 
         assert_eq!(actual, vec![AllowPath::File(expected)]);
