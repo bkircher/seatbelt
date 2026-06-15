@@ -1329,6 +1329,26 @@ allow:
     }
 
     #[test]
+    fn resolve_allow_read_paths_rejects_nonexistent_paths() -> Result<()> {
+        let temp = TestTempDir::new("allow-read-missing")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+        let missing = home.join("missing");
+
+        let result = resolve_allow_read_paths(&home, std::slice::from_ref(&missing));
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "failed to resolve --allow-read path: {}",
+                missing.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
     fn resolve_allow_read_paths_resolves_relative_directories() -> Result<()> {
         let expected = canonicalize(Path::new("src"), "failed to resolve test directory")?;
 
