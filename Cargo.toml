@@ -11,6 +11,9 @@ serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
 yaml_serde = "0.10.4"
 
+[dev-dependencies]
+tempfile = { version = "3.27.0", default-features = false }
+
 [lints.clippy]
 all = { level = "deny", priority = -1 }
 
