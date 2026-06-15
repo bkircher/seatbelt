@@ -44,7 +44,8 @@ struct AllowConfig {
 struct InvocationConfig {
     allow_env: Vec<String>,
     profile: SandboxProfile,
-    cli_allow_write_paths: Vec<AllowPath>,
+    allow_read_paths: Vec<AllowPath>,
+    allow_write_paths: Vec<AllowPath>,
 }
 
 struct RunConfig {
@@ -146,9 +147,18 @@ fn run(config: RunConfig) -> Result<()> {
         );
     }
 
-    for warning in
-        allow_write_project_dir_warnings(&config.invocation.cli_allow_write_paths, &project_dir)
-    {
+    for warning in project_dir_redundancy_warnings(
+        "allow.read/--allow-read",
+        &config.invocation.allow_read_paths,
+        &project_dir,
+    ) {
+        eprintln!("{warning}");
+    }
+    for warning in project_dir_redundancy_warnings(
+        "allow.write/--allow-write",
+        &config.invocation.allow_write_paths,
+        &project_dir,
+    ) {
         eprintln!("{warning}");
     }
 
@@ -194,20 +204,21 @@ fn load_invocation_config(
         validate_allowed_env_names(&cli_allow_env)?;
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
         let allow_read_paths = resolve_allow_read_paths(home, &cli_allow_read)?;
-        let cli_allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
-        let profile = if allow_read_paths.is_empty() && cli_allow_write_paths.is_empty() {
+        let allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
+        let profile = if allow_read_paths.is_empty() && allow_write_paths.is_empty() {
             SandboxProfile::File(profile)
         } else {
             SandboxProfile::Text(compose_import_profile(
                 &[profile],
                 &allow_read_paths,
-                &cli_allow_write_paths,
+                &allow_write_paths,
             )?)
         };
         return Ok(InvocationConfig {
             allow_env: cli_allow_env,
             profile,
-            cli_allow_write_paths,
+            allow_read_paths,
+            allow_write_paths,
         });
     }
 
@@ -229,9 +240,9 @@ fn load_invocation_config(
     allow_read_paths.extend(cli_allow_read);
     let allow_read_paths = resolve_allow_read_paths(home, &allow_read_paths)?;
 
-    let mut allow_write_paths = resolve_allow_write_paths(home, &allow.write)?;
-    let cli_allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
-    allow_write_paths.extend(cli_allow_write_paths.iter().cloned());
+    let mut allow_write_paths = allow.write;
+    allow_write_paths.extend(cli_allow_write);
+    let allow_write_paths = resolve_allow_write_paths(home, &allow_write_paths)?;
 
     let profile_root = home.join(PROFILES_SUFFIX);
     let mut profile_text = compose_profile(&profile_root, &profiles)?;
@@ -241,18 +252,24 @@ fn load_invocation_config(
     Ok(InvocationConfig {
         allow_env,
         profile: SandboxProfile::Text(profile_text),
-        cli_allow_write_paths,
+        allow_read_paths,
+        allow_write_paths,
     })
 }
 
 fn resolve_allow_read_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowPath>> {
-    resolve_allow_paths(home, paths, "--allow-read")
+    let resolved_paths = resolve_allow_paths(home, paths, "--allow-read")?;
+    if !resolved_paths.is_empty() {
+        reject_overly_broad_directories(home, &resolved_paths, "--allow-read")?;
+    }
+
+    Ok(resolved_paths)
 }
 
 fn resolve_allow_write_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowPath>> {
     let resolved_paths = resolve_allow_paths(home, paths, "--allow-write")?;
     if !resolved_paths.is_empty() {
-        reject_overly_broad_write_directories(home, &resolved_paths)?;
+        reject_overly_broad_directories(home, &resolved_paths, "--allow-write")?;
     }
 
     Ok(resolved_paths)
@@ -294,7 +311,25 @@ fn resolve_allow_paths(
     Ok(resolved_paths)
 }
 
-fn reject_overly_broad_write_directories(home: &Path, paths: &[AllowPath]) -> Result<()> {
+fn reject_overly_broad_directories(
+    home: &Path,
+    paths: &[AllowPath],
+    option_name: &'static str,
+) -> Result<()> {
+    let broad_directories = broad_directory_paths(home)?;
+
+    for path in paths {
+        if let AllowPath::Directory(path) = path
+            && is_overly_broad_directory(path, &broad_directories)
+        {
+            bail!("{option_name} directory is too broad: {}", path.display());
+        }
+    }
+
+    Ok(())
+}
+
+fn broad_directory_paths(home: &Path) -> Result<Vec<PathBuf>> {
     let resolved_home = canonicalize(home, "failed to resolve HOME")?;
     let resolved_users_dir = canonicalize(
         resolved_home
@@ -302,31 +337,48 @@ fn reject_overly_broad_write_directories(home: &Path, paths: &[AllowPath]) -> Re
             .ok_or_else(|| eyre!("resolved HOME has no parent: {}", resolved_home.display()))?,
         "failed to resolve users directory",
     )?;
+    let mut paths = vec![
+        PathBuf::from("/"),
+        resolved_users_dir,
+        resolved_home.clone(),
+    ];
+    push_existing_broad_directory(&mut paths, resolved_home.join("Documents"))?;
+    push_existing_broad_directory(&mut paths, resolved_home.join("src"))?;
 
-    for path in paths {
-        if let AllowPath::Directory(path) = path
-            && is_overly_broad_write_directory(path, &resolved_home, &resolved_users_dir)
-        {
-            bail!("--allow-write directory is too broad: {}", path.display());
-        }
+    Ok(paths)
+}
+
+fn push_existing_broad_directory(paths: &mut Vec<PathBuf>, path: PathBuf) -> Result<()> {
+    if path.is_dir() {
+        paths.push(canonicalize(path, "failed to resolve broad directory")?);
     }
 
     Ok(())
 }
 
-fn is_overly_broad_write_directory(path: &Path, home: &Path, users_dir: &Path) -> bool {
-    path == Path::new("/") || path == users_dir || path == home
+fn is_overly_broad_directory(path: &Path, broad_directories: &[PathBuf]) -> bool {
+    broad_directories
+        .iter()
+        .any(|broad_directory| path == broad_directory)
 }
 
-fn allow_write_project_dir_warnings(paths: &[AllowPath], project_dir: &Path) -> Vec<String> {
+fn project_dir_redundancy_warnings(
+    option_name: &str,
+    paths: &[AllowPath],
+    project_dir: &Path,
+) -> Vec<String> {
     paths
         .iter()
-        .filter_map(|path| match path {
-            AllowPath::Directory(path) if path == project_dir => Some(format!(
-                "warning: --allow-write {} is the same as $PROJECT_DIR",
-                path.display()
-            )),
-            _ => None,
+        .filter_map(|path| {
+            let path = path.path();
+            if path.starts_with(project_dir) {
+                return Some(format!(
+                    "warning: {option_name} {} is already covered by $PROJECT_DIR",
+                    path.display()
+                ));
+            }
+
+            None
         })
         .collect()
 }
@@ -1136,6 +1188,14 @@ allow:
         };
 
         assert_eq!(invocation.allow_env, Vec::<String>::new());
+        assert_eq!(
+            invocation.allow_read_paths,
+            vec![
+                AllowPath::Directory(expected_config_read_dir.clone()),
+                AllowPath::File(expected_cli_read_file.clone())
+            ]
+        );
+        assert_eq!(invocation.allow_write_paths, Vec::<AllowPath>::new());
         assert!(actual.contains(&format!(
             "(literal \"{}\")",
             expected_config_read_dir.display()
@@ -1209,9 +1269,13 @@ allow:
         };
 
         assert_eq!(invocation.allow_env, Vec::<String>::new());
+        assert_eq!(invocation.allow_read_paths, Vec::<AllowPath>::new());
         assert_eq!(
-            invocation.cli_allow_write_paths,
-            vec![AllowPath::File(expected_cli_write_file.clone())]
+            invocation.allow_write_paths,
+            vec![
+                AllowPath::Directory(expected_config_write_dir.clone()),
+                AllowPath::File(expected_cli_write_file.clone())
+            ]
         );
         assert!(actual.contains("; Additional read/write paths from allow.write/--allow-write"));
         assert!(actual.contains("(allow file-read* file-write*"));
@@ -1291,6 +1355,52 @@ allow:
     }
 
     #[test]
+    fn resolve_allow_write_paths_rejects_home_documents_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-write-documents")?;
+        let home = temp.path().join("home");
+        let documents = home.join("Documents");
+        fs::create_dir_all(&documents).wrap_err_with(|| {
+            format!(
+                "failed to create Documents directory: {}",
+                documents.display()
+            )
+        })?;
+        let expected_documents = canonicalize(&documents, "failed to resolve expected Documents")?;
+
+        let result = resolve_allow_write_paths(&home, &[PathBuf::from("~/Documents")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-write directory is too broad: {}",
+                expected_documents.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_write_paths_rejects_home_src_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-write-src")?;
+        let home = temp.path().join("home");
+        let src = home.join("src");
+        fs::create_dir_all(&src)
+            .wrap_err_with(|| format!("failed to create src directory: {}", src.display()))?;
+        let expected_src = canonicalize(&src, "failed to resolve expected src")?;
+
+        let result = resolve_allow_write_paths(&home, &[PathBuf::from("~/src")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-write directory is too broad: {}",
+                expected_src.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
     fn resolve_allow_write_paths_rejects_users_directory() -> Result<()> {
         let temp = TestTempDir::new("allow-write-users")?;
         let home = temp.path().join("home");
@@ -1311,18 +1421,33 @@ allow:
     }
 
     #[test]
-    fn allow_write_project_dir_warnings_reports_redundant_cli_path() {
+    fn project_dir_redundancy_warnings_report_read_and_write_paths() {
         let project_dir = Path::new("/Users/alice/project");
 
-        let actual = allow_write_project_dir_warnings(
+        let read_warnings = project_dir_redundancy_warnings(
+            "allow.read/--allow-read",
             &[AllowPath::Directory(PathBuf::from("/Users/alice/project"))],
+            project_dir,
+        );
+        let write_warnings = project_dir_redundancy_warnings(
+            "allow.write/--allow-write",
+            &[AllowPath::File(PathBuf::from(
+                "/Users/alice/project/output.log",
+            ))],
             project_dir,
         );
 
         assert_eq!(
-            actual,
+            read_warnings,
             vec![
-                "warning: --allow-write /Users/alice/project is the same as $PROJECT_DIR"
+                "warning: allow.read/--allow-read /Users/alice/project is already covered by $PROJECT_DIR"
+                    .to_owned()
+            ]
+        );
+        assert_eq!(
+            write_warnings,
+            vec![
+                "warning: allow.write/--allow-write /Users/alice/project/output.log is already covered by $PROJECT_DIR"
                     .to_owned()
             ]
         );
@@ -1349,10 +1474,113 @@ allow:
     }
 
     #[test]
+    fn resolve_allow_read_paths_rejects_root_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-read-root")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+
+        let result = resolve_allow_read_paths(&home, &[PathBuf::from("/")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some("--allow-read directory is too broad: /".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_read_paths_rejects_home_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-read-home")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+        let expected_home = canonicalize(&home, "failed to resolve expected home")?;
+
+        let result = resolve_allow_read_paths(&home, &[PathBuf::from("~")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-read directory is too broad: {}",
+                expected_home.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_read_paths_rejects_home_documents_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-read-documents")?;
+        let home = temp.path().join("home");
+        let documents = home.join("Documents");
+        fs::create_dir_all(&documents).wrap_err_with(|| {
+            format!(
+                "failed to create Documents directory: {}",
+                documents.display()
+            )
+        })?;
+        let expected_documents = canonicalize(&documents, "failed to resolve expected Documents")?;
+
+        let result = resolve_allow_read_paths(&home, &[PathBuf::from("~/Documents")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-read directory is too broad: {}",
+                expected_documents.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_read_paths_rejects_home_src_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-read-src")?;
+        let home = temp.path().join("home");
+        let src = home.join("src");
+        fs::create_dir_all(&src)
+            .wrap_err_with(|| format!("failed to create src directory: {}", src.display()))?;
+        let expected_src = canonicalize(&src, "failed to resolve expected src")?;
+
+        let result = resolve_allow_read_paths(&home, &[PathBuf::from("~/src")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-read directory is too broad: {}",
+                expected_src.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_read_paths_rejects_users_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-read-users")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+        let expected_users_dir = canonicalize(temp.path(), "failed to resolve expected users dir")?;
+
+        let result = resolve_allow_read_paths(&home, &[temp.path().to_path_buf()]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-read directory is too broad: {}",
+                expected_users_dir.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
     fn resolve_allow_read_paths_resolves_relative_directories() -> Result<()> {
+        let home = required_env_path("HOME")?;
         let expected = canonicalize(Path::new("src"), "failed to resolve test directory")?;
 
-        let actual = resolve_allow_read_paths(Path::new("/Users/alice"), &[PathBuf::from("src")])?;
+        let actual = resolve_allow_read_paths(&home, &[PathBuf::from("src")])?;
 
         assert_eq!(actual, vec![AllowPath::Directory(expected)]);
         Ok(())
@@ -1360,10 +1588,10 @@ allow:
 
     #[test]
     fn resolve_allow_read_paths_resolves_files() -> Result<()> {
+        let home = required_env_path("HOME")?;
         let expected = canonicalize(Path::new("Cargo.toml"), "failed to resolve test file")?;
 
-        let actual =
-            resolve_allow_read_paths(Path::new("/Users/alice"), &[PathBuf::from("Cargo.toml")])?;
+        let actual = resolve_allow_read_paths(&home, &[PathBuf::from("Cargo.toml")])?;
 
         assert_eq!(actual, vec![AllowPath::File(expected)]);
         Ok(())

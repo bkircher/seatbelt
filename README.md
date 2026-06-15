@@ -68,12 +68,12 @@ composition, environment variable handling, and extra read-only/read-write
 paths. Use `--allow-read PATH` to add read-only access to an extra file or
 directory. Use `--allow-write PATH` to add read/write access to an extra file or
 directory. `PATH` is resolved like `realpath` and must exist. Directory entries
-allow the directory itself and everything below it. Overly broad writable
-directories such as `/`, `/Users`, and `$HOME` are rejected. If `--allow-write`
-resolves to the project directory, Seatbelt prints a warning. Config files can
-also include `allow.read` and `allow.write`; entries use the same rules, and `~`
-expands to `$HOME`. Use `allow.env` to pass through additional environment
-variables:
+allow the directory itself and everything below it. Overly broad read/write
+directories such as `/`, `/Users`, `$HOME`, `$HOME/Documents`, and `$HOME/src`
+are rejected. If an extra read/write path is already covered by the project
+directory, Seatbelt prints a warning. Config files can also include
+`allow.read` and `allow.write`; entries use the same rules, and `~` expands to
+`$HOME`. Use `allow.env` to pass through additional environment variables:
 
 ```yaml
 allow:
