@@ -47,8 +47,8 @@ struct AllowConfig {
 struct InvocationConfig {
     allow_env: Vec<EnvName>,
     profile: SandboxProfile,
-    allow_read_paths: Vec<AllowPath>,
-    allow_write_paths: Vec<AllowPath>,
+    allow_read_paths: Vec<ResolvedAllowPath>,
+    allow_write_paths: Vec<ResolvedAllowPath>,
 }
 
 struct RunConfig {
@@ -62,16 +62,52 @@ enum SandboxProfile {
     Text(String),
 }
 
+/// Path resolved through `fs::canonicalize` when constructed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum AllowPath {
-    File(PathBuf),
-    Directory(PathBuf),
+struct CanonicalPathBuf(PathBuf);
+
+impl CanonicalPathBuf {
+    fn new(path: impl AsRef<Path>, context: &str) -> Result<Self> {
+        let path = path.as_ref();
+        fs::canonicalize(path)
+            .map(Self)
+            .wrap_err_with(|| format!("{context}: {}", path.display()))
+    }
+
+    fn as_path(&self) -> &Path {
+        &self.0
+    }
+
+    fn into_path_buf(self) -> PathBuf {
+        self.0
+    }
+
+    fn display(&self) -> std::path::Display<'_> {
+        self.0.display()
+    }
+
+    #[cfg(test)]
+    fn assume_canonical_for_test(path: impl Into<PathBuf>) -> Self {
+        Self(path.into())
+    }
 }
 
-impl AllowPath {
+impl AsRef<Path> for CanonicalPathBuf {
+    fn as_ref(&self) -> &Path {
+        self.as_path()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResolvedAllowPath {
+    File(CanonicalPathBuf),
+    Directory(CanonicalPathBuf),
+}
+
+impl ResolvedAllowPath {
     fn path(&self) -> &Path {
         match self {
-            Self::File(path) | Self::Directory(path) => path,
+            Self::File(path) | Self::Directory(path) => path.as_path(),
         }
     }
 }
@@ -114,10 +150,10 @@ impl AllowAccess {
 
 struct SandboxContext<'a> {
     profile: &'a SandboxProfile,
-    resolved_users_dir: &'a Path,
-    resolved_home: &'a Path,
-    project_dir: &'a Path,
-    resolved_tmpdir: &'a Path,
+    resolved_users_dir: CanonicalPathBuf,
+    resolved_home: CanonicalPathBuf,
+    project_dir: CanonicalPathBuf,
+    resolved_tmpdir: CanonicalPathBuf,
 }
 
 trait EnvSource {
@@ -163,20 +199,21 @@ fn main() -> Result<()> {
 
 fn run(config: RunConfig) -> Result<()> {
     let home = required_env_path("HOME")?;
-    let resolved_home = canonicalize(&home, "failed to resolve HOME")?;
-    let resolved_users_dir = canonicalize(
+    let resolved_home = CanonicalPathBuf::new(&home, "failed to resolve HOME")?;
+    let resolved_users_dir = CanonicalPathBuf::new(
         resolved_home
+            .as_path()
             .parent()
             .ok_or_else(|| eyre!("resolved HOME has no parent: {}", resolved_home.display()))?,
         "failed to resolve users directory",
     )?;
-    let mut project_dir = canonicalize(
+    let mut project_dir = CanonicalPathBuf::new(
         env::current_dir().wrap_err("failed to read current directory")?,
         "failed to resolve current directory",
     )?;
 
-    if let Some(git_root) = git_root(&project_dir)? {
-        project_dir = canonicalize(git_root, "failed to resolve Git root")?;
+    if let Some(git_root) = git_root(project_dir.as_path())? {
+        project_dir = CanonicalPathBuf::new(git_root, "failed to resolve Git root")?;
     }
 
     if project_dir == resolved_home {
@@ -189,28 +226,28 @@ fn run(config: RunConfig) -> Result<()> {
     for warning in project_dir_redundancy_warnings(
         AllowAccess::Read,
         &config.invocation.allow_read_paths,
-        &project_dir,
+        project_dir.as_path(),
     ) {
         eprintln!("{warning}");
     }
     for warning in project_dir_redundancy_warnings(
         AllowAccess::Write,
         &config.invocation.allow_write_paths,
-        &project_dir,
+        project_dir.as_path(),
     ) {
         eprintln!("{warning}");
     }
 
     let tmpdir = required_env_path("TMPDIR")?;
-    let resolved_tmpdir = canonicalize(tmpdir, "failed to resolve TMPDIR")?;
-    validate_tmpdir(&resolved_tmpdir)?;
+    let resolved_tmpdir = CanonicalPathBuf::new(tmpdir, "failed to resolve TMPDIR")?;
+    validate_tmpdir(resolved_tmpdir.as_path())?;
 
     let sandbox_context = SandboxContext {
         profile: &config.invocation.profile,
-        resolved_users_dir: &resolved_users_dir,
-        resolved_home: &resolved_home,
-        project_dir: &project_dir,
-        resolved_tmpdir: &resolved_tmpdir,
+        resolved_users_dir,
+        resolved_home,
+        project_dir,
+        resolved_tmpdir,
     };
     let final_command = build_final_command(
         &sandbox_context,
@@ -298,27 +335,23 @@ fn resolve_allow_paths(
     home: &Path,
     paths: &[PathBuf],
     access: AllowAccess,
-) -> Result<Vec<AllowPath>> {
+) -> Result<Vec<ResolvedAllowPath>> {
     let option_name = access.option_name();
     let mut resolved_paths = Vec::with_capacity(paths.len());
     for path in paths {
         let expanded_path = expand_home_path(home, path);
-        let resolved_path = fs::canonicalize(&expanded_path).wrap_err_with(|| {
-            format!(
-                "failed to resolve {option_name} path: {}",
-                expanded_path.display()
-            )
-        })?;
-        let metadata = fs::metadata(&resolved_path).wrap_err_with(|| {
+        let context = format!("failed to resolve {option_name} path");
+        let resolved_path = CanonicalPathBuf::new(&expanded_path, &context)?;
+        let metadata = fs::metadata(resolved_path.as_path()).wrap_err_with(|| {
             format!(
                 "failed to inspect {option_name} path: {}",
                 resolved_path.display()
             )
         })?;
         let allow_path = if metadata.is_file() {
-            AllowPath::File(resolved_path)
+            ResolvedAllowPath::File(resolved_path)
         } else if metadata.is_dir() {
-            AllowPath::Directory(resolved_path)
+            ResolvedAllowPath::Directory(resolved_path)
         } else {
             bail!(
                 "{option_name} path must be a file or directory: {}",
@@ -337,15 +370,15 @@ fn resolve_allow_paths(
 
 fn reject_overly_broad_directories(
     home: &Path,
-    paths: &[AllowPath],
+    paths: &[ResolvedAllowPath],
     access: AllowAccess,
 ) -> Result<()> {
     let option_name = access.option_name();
     let broad_directories = broad_directory_paths(home)?;
 
     for path in paths {
-        if let AllowPath::Directory(path) = path
-            && is_overly_broad_directory(path, &broad_directories)
+        if let ResolvedAllowPath::Directory(path) = path
+            && is_overly_broad_directory(path.as_path(), &broad_directories)
         {
             bail!("{option_name} directory is too broad: {}", path.display());
         }
@@ -389,7 +422,7 @@ fn is_overly_broad_directory(path: &Path, broad_directories: &[PathBuf]) -> bool
 
 fn project_dir_redundancy_warnings(
     access: AllowAccess,
-    paths: &[AllowPath],
+    paths: &[ResolvedAllowPath],
     project_dir: &Path,
 ) -> Vec<String> {
     let source_label = access.source_label();
@@ -487,8 +520,8 @@ fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> 
 
 fn compose_import_profile(
     imports: &[PathBuf],
-    allow_read_paths: &[AllowPath],
-    allow_write_paths: &[AllowPath],
+    allow_read_paths: &[ResolvedAllowPath],
+    allow_write_paths: &[ResolvedAllowPath],
 ) -> Result<String> {
     let mut profile = String::from("(version 1)\n\n");
     for import in imports {
@@ -504,7 +537,7 @@ fn compose_import_profile(
 
 fn append_allow_paths(
     profile: &mut String,
-    allow_paths: &[AllowPath],
+    allow_paths: &[ResolvedAllowPath],
     access: AllowAccess,
 ) -> Result<()> {
     if allow_paths.is_empty() {
@@ -522,7 +555,7 @@ fn append_allow_paths(
         profile.push_str(&literal);
         profile.push_str(")\n");
 
-        if matches!(path, AllowPath::Directory(_)) {
+        if matches!(path, ResolvedAllowPath::Directory(_)) {
             profile.push_str("    (subpath ");
             profile.push_str(&literal);
             profile.push_str(")\n");
@@ -599,16 +632,16 @@ fn build_final_command(
 
     final_command.extend([
         OsString::from("-D"),
-        env_pair_path("_USERS_DIR", sandbox_context.resolved_users_dir),
+        env_pair_path("_USERS_DIR", sandbox_context.resolved_users_dir.as_path()),
         OsString::from("-D"),
-        env_pair_path("_HOME", sandbox_context.resolved_home),
+        env_pair_path("_HOME", sandbox_context.resolved_home.as_path()),
         OsString::from("-D"),
-        env_pair_path("_PROJECT_DIR", sandbox_context.project_dir),
+        env_pair_path("_PROJECT_DIR", sandbox_context.project_dir.as_path()),
         OsString::from("-D"),
-        env_pair_path("_TMPDIR", sandbox_context.resolved_tmpdir),
+        env_pair_path("_TMPDIR", sandbox_context.resolved_tmpdir.as_path()),
         OsString::from("/usr/bin/env"),
         OsString::from("-i"),
-        env_pair_path("HOME", sandbox_context.resolved_home),
+        env_pair_path("HOME", sandbox_context.resolved_home.as_path()),
         env_pair("USER", env_source.var_os("USER").unwrap_or_default()),
         env_pair(
             "SHELL",
@@ -629,7 +662,7 @@ fn build_final_command(
                 .unwrap_or_else(|| OsString::from("en_US.UTF-8")),
         ),
         env_pair("PATH", env_source.var_os("PATH").unwrap_or_default()),
-        env_pair_path("TMPDIR", sandbox_context.resolved_tmpdir),
+        env_pair_path("TMPDIR", sandbox_context.resolved_tmpdir.as_path()),
     ]);
 
     append_if_set(&mut final_command, env_source, "SSH_AUTH_SOCK");
@@ -670,8 +703,7 @@ fn validate_tmpdir(path: &Path) -> Result<()> {
 }
 
 fn canonicalize(path: impl AsRef<Path>, context: &'static str) -> Result<PathBuf> {
-    fs::canonicalize(path.as_ref())
-        .wrap_err_with(|| format!("{context}: {}", path.as_ref().display()))
+    CanonicalPathBuf::new(path, context).map(CanonicalPathBuf::into_path_buf)
 }
 
 fn git_root(project_dir: &Path) -> Result<Option<PathBuf>> {
@@ -865,8 +897,12 @@ mod tests {
         );
     }
 
-    fn canonicalized(path: impl AsRef<Path>, context: &'static str) -> PathBuf {
-        must(canonicalize(path, context))
+    fn canonicalized(path: impl AsRef<Path>, context: &'static str) -> CanonicalPathBuf {
+        must(CanonicalPathBuf::new(path, context))
+    }
+
+    fn canonical_path(path: &str) -> CanonicalPathBuf {
+        CanonicalPathBuf::assume_canonical_for_test(PathBuf::from(path))
     }
 
     fn profile_text_contains(profile: &SandboxProfile, needle: &str) -> bool {
@@ -884,10 +920,10 @@ mod tests {
     fn sandbox_context(profile: &SandboxProfile) -> SandboxContext<'_> {
         SandboxContext {
             profile,
-            resolved_users_dir: Path::new("/Users"),
-            resolved_home: Path::new("/Users/alice"),
-            project_dir: Path::new("/Users/alice/project"),
-            resolved_tmpdir: Path::new("/tmp/alice"),
+            resolved_users_dir: canonical_path("/Users"),
+            resolved_home: canonical_path("/Users/alice"),
+            project_dir: canonical_path("/Users/alice/project"),
+            resolved_tmpdir: canonical_path("/tmp/alice"),
         }
     }
 
@@ -1178,11 +1214,14 @@ allow:
         assert_eq!(
             invocation.allow_read_paths,
             vec![
-                AllowPath::Directory(expected_config_read_dir.clone()),
-                AllowPath::File(expected_cli_read_file.clone())
+                ResolvedAllowPath::Directory(expected_config_read_dir.clone()),
+                ResolvedAllowPath::File(expected_cli_read_file.clone())
             ]
         );
-        assert_eq!(invocation.allow_write_paths, Vec::<AllowPath>::new());
+        assert_eq!(
+            invocation.allow_write_paths,
+            Vec::<ResolvedAllowPath>::new()
+        );
         assert!(profile_text_contains(
             &invocation.profile,
             &format!("(literal \"{}\")", expected_config_read_dir.display())
@@ -1235,12 +1274,12 @@ allow:
         );
 
         assert_eq!(invocation.allow_env, Vec::<EnvName>::new());
-        assert_eq!(invocation.allow_read_paths, Vec::<AllowPath>::new());
+        assert_eq!(invocation.allow_read_paths, Vec::<ResolvedAllowPath>::new());
         assert_eq!(
             invocation.allow_write_paths,
             vec![
-                AllowPath::Directory(expected_config_write_dir.clone()),
-                AllowPath::File(expected_cli_write_file.clone())
+                ResolvedAllowPath::Directory(expected_config_write_dir.clone()),
+                ResolvedAllowPath::File(expected_cli_write_file.clone())
             ]
         );
         assert!(profile_text_contains(
@@ -1382,12 +1421,14 @@ allow:
 
         let read_warnings = project_dir_redundancy_warnings(
             AllowAccess::Read,
-            &[AllowPath::Directory(PathBuf::from("/Users/alice/project"))],
+            &[ResolvedAllowPath::Directory(canonical_path(
+                "/Users/alice/project",
+            ))],
             project_dir,
         );
         let write_warnings = project_dir_redundancy_warnings(
             AllowAccess::Write,
-            &[AllowPath::File(PathBuf::from(
+            &[ResolvedAllowPath::File(canonical_path(
                 "/Users/alice/project/output.log",
             ))],
             project_dir,
@@ -1526,7 +1567,7 @@ allow:
             AllowAccess::Read,
         ));
 
-        assert_eq!(actual, vec![AllowPath::Directory(expected)]);
+        assert_eq!(actual, vec![ResolvedAllowPath::Directory(expected)]);
     }
 
     #[test]
@@ -1540,7 +1581,7 @@ allow:
             AllowAccess::Read,
         ));
 
-        assert_eq!(actual, vec![AllowPath::File(expected)]);
+        assert_eq!(actual, vec![ResolvedAllowPath::File(expected)]);
     }
 
     #[test]
@@ -1548,9 +1589,9 @@ allow:
         let actual = must(compose_import_profile(
             &[PathBuf::from("/profiles/raw.sb")],
             &[
-                AllowPath::Directory(PathBuf::from("/Users/alice/docs")),
-                AllowPath::File(PathBuf::from("/Users/alice/.zshrc")),
-                AllowPath::Directory(PathBuf::from("/Volumes/Shared Stuff")),
+                ResolvedAllowPath::Directory(canonical_path("/Users/alice/docs")),
+                ResolvedAllowPath::File(canonical_path("/Users/alice/.zshrc")),
+                ResolvedAllowPath::Directory(canonical_path("/Volumes/Shared Stuff")),
             ],
             &[],
         ));
@@ -1567,8 +1608,8 @@ allow:
             &[PathBuf::from("/profiles/raw.sb")],
             &[],
             &[
-                AllowPath::Directory(PathBuf::from("/Users/alice/dist")),
-                AllowPath::File(PathBuf::from("/Users/alice/output.log")),
+                ResolvedAllowPath::Directory(canonical_path("/Users/alice/dist")),
+                ResolvedAllowPath::File(canonical_path("/Users/alice/output.log")),
             ],
         ));
 
@@ -1582,7 +1623,9 @@ allow:
     fn compose_import_profile_escapes_allow_read_paths() {
         let actual = must(compose_import_profile(
             &[PathBuf::from("/profiles/raw.sb")],
-            &[AllowPath::File(PathBuf::from("/Users/alice/quoted\"file"))],
+            &[ResolvedAllowPath::File(canonical_path(
+                "/Users/alice/quoted\"file",
+            ))],
             &[],
         ));
 
