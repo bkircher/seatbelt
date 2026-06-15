@@ -370,16 +370,12 @@ fn project_dir_redundancy_warnings(
 ) -> Vec<String> {
     paths
         .iter()
-        .filter_map(|path| {
-            let path = path.path();
-            if path.starts_with(project_dir) {
-                return Some(format!(
-                    "warning: {option_name} {} is already covered by $PROJECT_DIR",
-                    path.display()
-                ));
-            }
-
-            None
+        .filter(|path| path.path().starts_with(project_dir))
+        .map(|path| {
+            format!(
+                "warning: {option_name} {} is already covered by $PROJECT_DIR",
+                path.path().display()
+            )
         })
         .collect()
 }
@@ -455,10 +451,10 @@ fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> 
         bail!("config must contain at least one profile");
     }
 
-    let mut imports = Vec::with_capacity(profiles.len());
-    for profile_fragment in profiles {
-        imports.push(resolve_profile_fragment(profile_root, profile_fragment)?);
-    }
+    let imports = profiles
+        .iter()
+        .map(|profile_fragment| resolve_profile_fragment(profile_root, profile_fragment))
+        .collect::<Result<Vec<_>>>()?;
 
     compose_import_profile(&imports, &[], &[])
 }
@@ -725,10 +721,17 @@ fn shell_quote(arg: &OsStr) -> String {
     }
 
     if bytes.iter().all(|byte| is_shell_safe_byte(*byte)) {
-        return arg.to_string_lossy().into_owned();
+        return bytes.iter().map(|byte| char::from(*byte)).collect();
     }
 
-    let text = arg.to_string_lossy();
+    if let Some(text) = arg.to_str() {
+        return shell_single_quote(text);
+    }
+
+    shell_ansi_c_quote(bytes)
+}
+
+fn shell_single_quote(text: &str) -> String {
     let mut quoted = String::from("'");
     for character in text.chars() {
         if character == '\'' {
@@ -739,6 +742,30 @@ fn shell_quote(arg: &OsStr) -> String {
     }
     quoted.push('\'');
     quoted
+}
+
+fn shell_ansi_c_quote(bytes: &[u8]) -> String {
+    let mut quoted = String::from("$'");
+    for byte in bytes {
+        match *byte {
+            b'\'' => quoted.push_str("\\'"),
+            b'\\' => quoted.push_str("\\\\"),
+            b'\n' => quoted.push_str("\\n"),
+            b'\r' => quoted.push_str("\\r"),
+            b'\t' => quoted.push_str("\\t"),
+            0x20..=0x7e => quoted.push(char::from(*byte)),
+            _ => push_shell_octal_escape(&mut quoted, *byte),
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+fn push_shell_octal_escape(quoted: &mut String, byte: u8) {
+    quoted.push('\\');
+    quoted.push(char::from(b'0' + (byte >> 6)));
+    quoted.push(char::from(b'0' + ((byte >> 3) & 0o7)));
+    quoted.push(char::from(b'0' + (byte & 0o7)));
 }
 
 fn is_shell_safe_byte(byte: u8) -> bool {
@@ -775,7 +802,7 @@ fn exec_command(final_command: &[OsString]) -> Result<()> {
     reason = "tests use ? for fallible command construction while assertions still panic"
 )]
 mod tests {
-    use std::{collections::BTreeMap, fs};
+    use std::{collections::BTreeMap, fs, os::unix::ffi::OsStringExt};
 
     use super::*;
 
@@ -1625,6 +1652,18 @@ allow:
         let actual = shell_words(&command);
 
         assert_eq!(actual, "echo 'café'");
+    }
+
+    #[test]
+    fn shell_words_escapes_non_utf8_arguments_without_replacement() {
+        let command = [
+            os("echo"),
+            OsString::from_vec(vec![b'f', b'o', b'o', 0xff, b'b', b'a', b'r']),
+        ];
+
+        let actual = shell_words(&command);
+
+        assert_eq!(actual, "echo $'foo\\377bar'");
     }
 
     #[test]
