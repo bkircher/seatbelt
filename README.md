@@ -1,20 +1,19 @@
 # Seatbelt
 
-A macOS sandbox wrapper for running agents or other tools with SBPL profiles.
+Seatbelt runs a command inside a macOS `sandbox-exec` profile. It is meant for
+wrapping coding agents and other developer tools with an OS-level filesystem
+policy that applies to the whole process tree.
 
-## Usage
+## The problem Seatbelt solves
 
-```bash
-cd ~/acme-project
-seatbelt --config=acme run pi
-```
+Agents usually come with a sandboxing mechanism. However, the process you start
+is usually not sandboxed, and both the agent itself and its extensions have to
+adhere to a calling convention in order to have tool calls sandboxed. Thus,
+escaping a sandbox is quite easy for an agent (in theory).
 
-## The problem `seatbelt` fixes
+Example with pi:
 
-Some sandbox extensions written for `pi` are hard to reason about because they
-all run after the main `pi` Node.js process is already running:
-
-```text
+```raw
 pi Node.js process       unsandboxed
 └─ outer shell           effectively just runs the wrapper
    └─ sandbox-exec
@@ -23,148 +22,104 @@ pi Node.js process       unsandboxed
             └─ curl      sandboxed
 ```
 
-The sandbox applies to the inner shell and its process tree. `exec`, `fork`,
-`spawn`, etc. do not escape it. However, any extension can spawn its own child
-processes, so they can bypass the inner sandbox. This means:
+A typical Codex runtime looks like:
 
-Arbitrary child processes spawned by the main `pi` Node.js process are not
-automatically sandboxed.
-
-This makes those approaches largely ineffective. Instead, `pi` itself needs to
-be spawned in a sandbox. For this use case, `sandbox-exec` provides a very
-straightforward SBPL profile syntax.
-
-However, this still does not handle:
-
-- policy composition
-- environment variables
-- outbound network firewalling
-
-## Layering with built-in sandboxes
-
-This works as an outer layer around any agent's own sandbox:
-
+```raw
+node codex.js                  unsandboxed launcher
+└─ codex native binary         unsandboxed agent/core
+   └─ /usr/bin/sandbox-exec    sandbox launcher
+      └─ shell/tool command    sandboxed
+         └─ child processes    sandboxed
 ```
-seatbelt                         OS-level, file policy
+
+A better approach is to have the sandboxing process start the agent, so the
+agent and its child processes cannot escape.
+
+This can even work as an outer layer around any agent's own sandbox:
+
+```raw
+seatbelt                         OS-level
 └─ agent's built-in sandbox      if any
-    └─ your agent process tree
+    └─ your agent's process tree
 ```
 
-The outer layer handles what the agent shouldn't touch. The inner layer handles
-tool-specific permissions and optional network controls. They don't conflict.
-Seatbelt rules compose by taking the intersection.
+In addition, the outer sandbox must allow whatever the agent needs: API and
+network access, configuration, credentials, logs, temporary directories,
+sockets, etc. Any inner sandbox can only further restrict access; it cannot
+grant permissions denied by the outer sandbox. This makes the outer sandbox the
+baseline permission boundary.
 
-## Customization
+## Usage
 
-Profiles are written in
+```bash
+cd ~/my-project
+seatbelt run pi
+seatbelt --config acme run pi
+seatbelt --allow-read ~/src/shared --allow-write ~/build-dir run pi
+```
+
+Use `seatbelt print-profile` to inspect the composed sandbox profile, or add
+`--dry-run` to print the final `sandbox-exec` command.
+
+## Configuration
+
+By default, Seatbelt loads `~/.config/seatbelt/default.yaml`. Named
+configuration files such as `acme.yaml` or `acme.yml` live in
+`~/.config/seatbelt/` and can be selected with `--config acme`. Profiles live in
+`~/.config/seatbelt/profiles/` and are written in
 [SBPL](https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf).
-The wrapper injects four parameters: `_USERS_DIR`, `_HOME`, `_PROJECT_DIR`, and
-`_TMPDIR`. You can add or change your own profiles. Profiles are meant for
-defining sandbox policies. They should be small and targeted to the command,
-tools, or current project or task.
 
-For user-facing configuration, use `--config`. It allows SBPL profile
-composition, environment variable handling, and extra read-only/read-write
-paths. Use `--allow-read PATH` to add read-only access to an extra file or
-directory. Use `--allow-write PATH` to add read/write access to an extra file or
-directory. `PATH` is resolved like `realpath` and must exist. Directory entries
-allow the directory itself and everything below it. Overly broad read/write
-directories such as `/`, `/Users`, `$HOME`, `$HOME/Documents`, and `$HOME/src`
-are rejected. If an extra read/write path is already covered by the project
-directory, Seatbelt prints a warning. Config files can also include
-`allow.read` and `allow.write`; entries use the same rules, and `~` expands to
-`$HOME`. Use `allow.env` to pass through additional environment variables:
+A configuration composes one or more profiles and can allow extra environment
+variables or paths:
 
 ```yaml
+profiles:
+  - base.sb
+  - project.sb
+  - tools/git.sb
+  - agents/pi.sb
+
 allow:
   env:
     - ATLASSIAN_API_TOKEN
   read:
-    - ~/src/pi
+    - ~/src/shared
   write:
     - ~/project-output
 ```
 
-Network policies may come later.
+`--allow-read`, `--allow-write`, and `--allow-env` add permissions for a single
+run. Path entries must already exist, and broad directories such as `/`,
+`/Users`, `$HOME`, and `$HOME/src` are rejected.
 
-## Debugging SBPL profiles
+## Notes
 
-See logs with something like:
+- Seatbelt is an outer sandbox. It can be used alongside an agent's built-in
+  sandbox; the effective access is the intersection of both policies.
+- Run it from a project directory. Seatbelt refuses to run from `$HOME` because
+  that would make the home directory the project boundary.
+- Network access is not a domain-aware firewall. Profiles can deny or broadly
+  allow networking, but host-level policy needs a proxy or another tool.
+- macOS only. `sandbox-exec` is deprecated by Apple, but it is still shipped and
+  receives security fixes in current macOS releases.
+- Keychain access is allowed so tools such as Git and AWS credential helpers can
+  work. Be aware that sandboxed commands can still perform authenticated
+  actions.
 
-```sh
-log stream --style syslog --predicate 'process == "kernel" AND sender == "Sandbox"'
+## Install
+
+```bash
+cargo build --release
+make install
 ```
 
-or just denials:
+`make install` copies the binary to `~/bin` if that directory exists and
+installs the bundled configuration files and profiles under
+`~/.config/seatbelt/`.
 
-```sh
-log stream --style syslog --predicate 'process == "kernel" AND sender == "Sandbox" AND eventMessage CONTAINS "deny"'
-```
+## References
 
-## Ideas / TODO
-
-- Additional profiles for clipboard, SSH, 1Password, headless browsers?
-- Auth proxy: A reverse proxy running outside the sandbox that injects API keys
-  into outbound requests. The sandboxed agent only talks to `localhost` and
-  never sees the real keys. [mitmproxy](https://mitmproxy.org/) with header
-  injection can do this in one line. Most SDKs (OpenAI, Anthropic, etc.) already
-  support a custom `base_url`, which can be used for this.
-- Network proxy: Seatbelt is not a DNS-aware outbound firewall. It can disallow
-  all networking:
-  ```scheme
-  (deny network*)
-  ```
-  It can also allow broad outbound networking:
-  ```scheme
-  (allow network-outbound)
-  ```
-  However, it cannot do domain allowlists natively like:
-  ```scheme
-  (allow network-outbound "example.com:443")
-  ```
-  In theory, it can allow localhost/proxy-style access:
-  ```scheme
-  (deny network*)
-  (allow network-outbound (remote tcp "localhost:8080"))
-  ```
-
-## Caveats
-
-There are many.
-
-- macOS only. For Linux, maybe look at
-  [bubblewrap](https://github.com/containers/bubblewrap).
-- `sandbox-exec` is technically deprecated by Apple. It still works on Sequoia
-  and Tahoe, and no replacement exists for third-party use. It is actively
-  maintained. Apple still ships security fixes for sandbox escapes and sandbox
-  restrictions in current macOS security updates. For example, macOS Sequoia
-  15.7.4 had a [fix](https://support.apple.com/en-us/126349) for a sandbox
-  breakout.
-- Network access is wide open. If a secret enters the process, it can be
-  exfiltrated easily. Seatbelt cannot deny outbound network access on a
-  host-by-host basis. This would require an outbound network proxy (maybe in the
-  future?).
-- Keychain access is allowed by design, so credential helpers (git, AWS) work
-  without the agent seeing raw tokens. But the agent can still perform
-  authenticated actions like `git push`.
-
-## Best documentation / references
-
-- `man sandbox-exec`, `man sandbox`, `man sandbox_init`, `man sandboxd` for the
-  small official interface.
-- Chromium's macOS sandbox docs and production `.sb` policies; they are
-  practical and current:
-  <https://chromium.googlesource.com/chromium/src/%2B/HEAD/sandbox/mac/README.md>
-  and
-  <https://www.chromium.org/developers/design-documents/sandbox/osx-sandboxing-design/>
-- Existing system profiles under `/System/Library/Sandbox/Profiles`, or
-  `/usr/share/sandbox`, depending on macOS version.
-- Reverse-engineered SBPL docs are useful because Apple does not publish
-  thorough SBPL documentation; Chromium explicitly notes that there is no
-  official OS-provided SBPL documentation:
-  <https://www.chromium.org/developers/design-documents/sandbox/osx-sandboxing-design/>
-
-## Prior art
-
-- [CJHwong/agent-seatbelt](https://github.com/CJHwong/agent-seatbelt) for Claude
-  Code. In my opinion, it uses the right approach.
+- `man sandbox-exec`, `man sandbox`, `man sandbox_init`, and `man sandboxd`
+- Chromium's macOS sandbox documentation:
+  <https://chromium.googlesource.com/chromium/src/+/HEAD/sandbox/mac/README.md>
+- Prior art: <https://github.com/CJHwong/agent-seatbelt>
