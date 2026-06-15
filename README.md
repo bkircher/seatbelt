@@ -64,12 +64,16 @@ defining sandbox policies. They should be small and targeted to the command,
 tools, or current project or task.
 
 For user-facing configuration, use `--config`. It allows SBPL profile
-composition, environment variable handling, and extra read-only paths. Use
-`--allow-read PATH` to add read-only access to an extra file or directory;
-`PATH` is resolved like `realpath` and must exist. Directory entries allow the
-directory itself and everything below it. Config files can also include
-`allow.read`; entries use the same rules, and `~` expands to `$HOME`.
-Use `allow.env` to pass through additional environment variables:
+composition, environment variable handling, and extra read-only/read-write
+paths. Use `--allow-read PATH` to add read-only access to an extra file or
+directory. Use `--allow-write PATH` to add read/write access to an extra file or
+directory. `PATH` is resolved like `realpath` and must exist. Directory entries
+allow the directory itself and everything below it. Overly broad writable
+directories such as `/`, `/Users`, and `$HOME` are rejected. If `--allow-write`
+resolves to the project directory, Seatbelt prints a warning. Config files can
+also include `allow.read` and `allow.write`; entries use the same rules, and `~`
+expands to `$HOME`. Use `allow.env` to pass through additional environment
+variables:
 
 ```yaml
 allow:
@@ -77,6 +81,8 @@ allow:
     - ATLASSIAN_API_TOKEN
   read:
     - ~/src/pi
+  write:
+    - ~/project-output
 ```
 
 Network policies may come later.

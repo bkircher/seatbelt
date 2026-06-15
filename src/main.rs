@@ -36,11 +36,15 @@ struct AllowConfig {
 
     #[serde(default)]
     read: Vec<PathBuf>,
+
+    #[serde(default)]
+    write: Vec<PathBuf>,
 }
 
 struct InvocationConfig {
     allow_env: Vec<String>,
     profile: SandboxProfile,
+    cli_allow_write_paths: Vec<AllowPath>,
 }
 
 struct RunConfig {
@@ -54,13 +58,13 @@ enum SandboxProfile {
     Text(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum AllowReadPath {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AllowPath {
     File(PathBuf),
     Directory(PathBuf),
 }
 
-impl AllowReadPath {
+impl AllowPath {
     fn path(&self) -> &Path {
         match self {
             Self::File(path) | Self::Directory(path) => path,
@@ -101,6 +105,7 @@ fn main() -> Result<()> {
         cli.profile,
         cli.allow_env,
         cli.allow_read,
+        cli.allow_write,
     )?;
 
     match cli.command {
@@ -141,6 +146,12 @@ fn run(config: RunConfig) -> Result<()> {
         );
     }
 
+    for warning in
+        allow_write_project_dir_warnings(&config.invocation.cli_allow_write_paths, &project_dir)
+    {
+        eprintln!("{warning}");
+    }
+
     let tmpdir = required_env_path("TMPDIR")?;
     let resolved_tmpdir = canonicalize(tmpdir, "failed to resolve TMPDIR")?;
     validate_tmpdir(&resolved_tmpdir)?;
@@ -173,6 +184,7 @@ fn load_invocation_config(
     profile_arg: Option<PathBuf>,
     cli_allow_env: Vec<String>,
     cli_allow_read: Vec<PathBuf>,
+    cli_allow_write: Vec<PathBuf>,
 ) -> Result<InvocationConfig> {
     if config_arg.is_some() && profile_arg.is_some() {
         bail!("--profile cannot be used together with --config");
@@ -182,14 +194,20 @@ fn load_invocation_config(
         validate_allowed_env_names(&cli_allow_env)?;
         let profile = canonicalize_existing_file(&profile, "sandbox profile not found")?;
         let allow_read_paths = resolve_allow_read_paths(home, &cli_allow_read)?;
-        let profile = if allow_read_paths.is_empty() {
+        let cli_allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
+        let profile = if allow_read_paths.is_empty() && cli_allow_write_paths.is_empty() {
             SandboxProfile::File(profile)
         } else {
-            SandboxProfile::Text(compose_import_profile(&[profile], &allow_read_paths)?)
+            SandboxProfile::Text(compose_import_profile(
+                &[profile],
+                &allow_read_paths,
+                &cli_allow_write_paths,
+            )?)
         };
         return Ok(InvocationConfig {
             allow_env: cli_allow_env,
             profile,
+            cli_allow_write_paths,
         });
     }
 
@@ -211,41 +229,106 @@ fn load_invocation_config(
     allow_read_paths.extend(cli_allow_read);
     let allow_read_paths = resolve_allow_read_paths(home, &allow_read_paths)?;
 
+    let mut allow_write_paths = resolve_allow_write_paths(home, &allow.write)?;
+    let cli_allow_write_paths = resolve_allow_write_paths(home, &cli_allow_write)?;
+    allow_write_paths.extend(cli_allow_write_paths.iter().cloned());
+
     let profile_root = home.join(PROFILES_SUFFIX);
     let mut profile_text = compose_profile(&profile_root, &profiles)?;
     append_allow_read_paths(&mut profile_text, &allow_read_paths)?;
+    append_allow_write_paths(&mut profile_text, &allow_write_paths)?;
 
     Ok(InvocationConfig {
         allow_env,
         profile: SandboxProfile::Text(profile_text),
+        cli_allow_write_paths,
     })
 }
 
-fn resolve_allow_read_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowReadPath>> {
-    let mut resolved_paths = Vec::with_capacity(paths.len());
-    for path in paths {
-        let expanded_path = expand_home_path(home, path);
-        let resolved_path = canonicalize(&expanded_path, "failed to resolve --allow-read path")?;
-        let metadata = fs::metadata(&resolved_path).wrap_err_with(|| {
-            format!(
-                "failed to inspect --allow-read path: {}",
-                resolved_path.display()
-            )
-        })?;
-        let allow_read_path = if metadata.is_file() {
-            AllowReadPath::File(resolved_path)
-        } else if metadata.is_dir() {
-            AllowReadPath::Directory(resolved_path)
-        } else {
-            bail!(
-                "--allow-read path must be a file or directory: {}",
-                resolved_path.display()
-            );
-        };
-        resolved_paths.push(allow_read_path);
+fn resolve_allow_read_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowPath>> {
+    resolve_allow_paths(home, paths, "--allow-read")
+}
+
+fn resolve_allow_write_paths(home: &Path, paths: &[PathBuf]) -> Result<Vec<AllowPath>> {
+    let resolved_paths = resolve_allow_paths(home, paths, "--allow-write")?;
+    if !resolved_paths.is_empty() {
+        reject_overly_broad_write_directories(home, &resolved_paths)?;
     }
 
     Ok(resolved_paths)
+}
+
+fn resolve_allow_paths(
+    home: &Path,
+    paths: &[PathBuf],
+    option_name: &'static str,
+) -> Result<Vec<AllowPath>> {
+    let mut resolved_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        let expanded_path = expand_home_path(home, path);
+        let resolved_path = fs::canonicalize(&expanded_path).wrap_err_with(|| {
+            format!(
+                "failed to resolve {option_name} path: {}",
+                expanded_path.display()
+            )
+        })?;
+        let metadata = fs::metadata(&resolved_path).wrap_err_with(|| {
+            format!(
+                "failed to inspect {option_name} path: {}",
+                resolved_path.display()
+            )
+        })?;
+        let allow_path = if metadata.is_file() {
+            AllowPath::File(resolved_path)
+        } else if metadata.is_dir() {
+            AllowPath::Directory(resolved_path)
+        } else {
+            bail!(
+                "{option_name} path must be a file or directory: {}",
+                resolved_path.display()
+            );
+        };
+        resolved_paths.push(allow_path);
+    }
+
+    Ok(resolved_paths)
+}
+
+fn reject_overly_broad_write_directories(home: &Path, paths: &[AllowPath]) -> Result<()> {
+    let resolved_home = canonicalize(home, "failed to resolve HOME")?;
+    let resolved_users_dir = canonicalize(
+        resolved_home
+            .parent()
+            .ok_or_else(|| eyre!("resolved HOME has no parent: {}", resolved_home.display()))?,
+        "failed to resolve users directory",
+    )?;
+
+    for path in paths {
+        if let AllowPath::Directory(path) = path
+            && is_overly_broad_write_directory(path, &resolved_home, &resolved_users_dir)
+        {
+            bail!("--allow-write directory is too broad: {}", path.display());
+        }
+    }
+
+    Ok(())
+}
+
+fn is_overly_broad_write_directory(path: &Path, home: &Path, users_dir: &Path) -> bool {
+    path == Path::new("/") || path == users_dir || path == home
+}
+
+fn allow_write_project_dir_warnings(paths: &[AllowPath], project_dir: &Path) -> Vec<String> {
+    paths
+        .iter()
+        .filter_map(|path| match path {
+            AllowPath::Directory(path) if path == project_dir => Some(format!(
+                "warning: --allow-write {} is the same as $PROJECT_DIR",
+                path.display()
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 fn expand_home_path(home: &Path, path: &Path) -> PathBuf {
@@ -324,12 +407,13 @@ fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> 
         imports.push(resolve_profile_fragment(profile_root, profile_fragment)?);
     }
 
-    compose_import_profile(&imports, &[])
+    compose_import_profile(&imports, &[], &[])
 }
 
 fn compose_import_profile(
     imports: &[PathBuf],
-    allow_read_paths: &[AllowReadPath],
+    allow_read_paths: &[AllowPath],
+    allow_write_paths: &[AllowPath],
 ) -> Result<String> {
     let mut profile = String::from("(version 1)\n\n");
     for import in imports {
@@ -338,11 +422,12 @@ fn compose_import_profile(
         profile.push_str(")\n");
     }
     append_allow_read_paths(&mut profile, allow_read_paths)?;
+    append_allow_write_paths(&mut profile, allow_write_paths)?;
 
     Ok(profile)
 }
 
-fn append_allow_read_paths(profile: &mut String, allow_read_paths: &[AllowReadPath]) -> Result<()> {
+fn append_allow_read_paths(profile: &mut String, allow_read_paths: &[AllowPath]) -> Result<()> {
     if allow_read_paths.is_empty() {
         return Ok(());
     }
@@ -355,7 +440,31 @@ fn append_allow_read_paths(profile: &mut String, allow_read_paths: &[AllowReadPa
         profile.push_str(&literal);
         profile.push_str(")\n");
 
-        if matches!(path, AllowReadPath::Directory(_)) {
+        if matches!(path, AllowPath::Directory(_)) {
+            profile.push_str("    (subpath ");
+            profile.push_str(&literal);
+            profile.push_str(")\n");
+        }
+    }
+    profile.push_str(")\n");
+
+    Ok(())
+}
+
+fn append_allow_write_paths(profile: &mut String, allow_write_paths: &[AllowPath]) -> Result<()> {
+    if allow_write_paths.is_empty() {
+        return Ok(());
+    }
+
+    profile.push_str("\n; Additional read/write paths from allow.write/--allow-write\n");
+    profile.push_str("(allow file-read* file-write*\n");
+    for path in allow_write_paths {
+        let literal = sbpl_string_literal(path.path())?;
+        profile.push_str("    (literal ");
+        profile.push_str(&literal);
+        profile.push_str(")\n");
+
+        if matches!(path, AllowPath::Directory(_)) {
             profile.push_str("    (subpath ");
             profile.push_str(&literal);
             profile.push_str(")\n");
@@ -902,6 +1011,9 @@ allow:
   read:
     - ~/src/pi
     - docs
+  write:
+    - dist
+    - ~/tmp/output
 "#,
         )?;
 
@@ -913,6 +1025,10 @@ allow:
         assert_eq!(
             config.allow.read,
             vec![PathBuf::from("~/src/pi"), PathBuf::from("docs")]
+        );
+        assert_eq!(
+            config.allow.write,
+            vec![PathBuf::from("dist"), PathBuf::from("~/tmp/output")]
         );
         Ok(())
     }
@@ -955,6 +1071,7 @@ allow:
             Path::new("/Users/alice"),
             Some(PathBuf::from("acme")),
             Some(PathBuf::from("raw.sb")),
+            vec![],
             vec![],
             vec![],
         );
@@ -1004,6 +1121,7 @@ allow:
             None,
             vec![],
             vec![cli_read_file.clone()],
+            vec![],
         )?;
         let expected_config_read_dir = canonicalize(
             config_read_dir,
@@ -1038,12 +1156,185 @@ allow:
     }
 
     #[test]
+    fn load_invocation_config_combines_config_and_cli_allow_write_paths() -> Result<()> {
+        let temp = TestTempDir::new("config-allow-write")?;
+        let home = temp.path().join("home");
+        let profile_dir = home.join(PROFILES_SUFFIX);
+        let config_write_dir = home.join("dist");
+        let cli_write_file = temp.path().join("output.log");
+        fs::create_dir_all(&profile_dir).wrap_err_with(|| {
+            format!(
+                "failed to create profile directory: {}",
+                profile_dir.display()
+            )
+        })?;
+        fs::create_dir_all(&config_write_dir).wrap_err_with(|| {
+            format!(
+                "failed to create config allow-write directory: {}",
+                config_write_dir.display()
+            )
+        })?;
+        fs::write(&cli_write_file, "existing\n").wrap_err_with(|| {
+            format!(
+                "failed to create CLI allow-write file: {}",
+                cli_write_file.display()
+            )
+        })?;
+        fs::write(profile_dir.join("base.sb"), "; base profile\n")
+            .wrap_err("failed to write test profile")?;
+        fs::write(
+            home.join(CONFIGS_SUFFIX).join("build.yaml"),
+            "profiles:\n  - base.sb\nallow:\n  write:\n    - ~/dist\n",
+        )
+        .wrap_err("failed to write test config")?;
+
+        let invocation = load_invocation_config(
+            &home,
+            Some(PathBuf::from("build")),
+            None,
+            vec![],
+            vec![],
+            vec![cli_write_file.clone()],
+        )?;
+        let expected_config_write_dir = canonicalize(
+            config_write_dir,
+            "failed to resolve expected config allow-write directory",
+        )?;
+        let expected_cli_write_file = canonicalize(
+            cli_write_file,
+            "failed to resolve expected CLI allow-write file",
+        )?;
+        let SandboxProfile::Text(actual) = invocation.profile else {
+            bail!("expected generated profile text")
+        };
+
+        assert_eq!(invocation.allow_env, Vec::<String>::new());
+        assert_eq!(
+            invocation.cli_allow_write_paths,
+            vec![AllowPath::File(expected_cli_write_file.clone())]
+        );
+        assert!(actual.contains("; Additional read/write paths from allow.write/--allow-write"));
+        assert!(actual.contains("(allow file-read* file-write*"));
+        assert!(actual.contains(&format!(
+            "(literal \"{}\")",
+            expected_config_write_dir.display()
+        )));
+        assert!(actual.contains(&format!(
+            "(subpath \"{}\")",
+            expected_config_write_dir.display()
+        )));
+        assert!(actual.contains(&format!(
+            "(literal \"{}\")",
+            expected_cli_write_file.display()
+        )));
+        assert!(!actual.contains(&format!(
+            "(subpath \"{}\")",
+            expected_cli_write_file.display()
+        )));
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_write_paths_rejects_nonexistent_paths() -> Result<()> {
+        let temp = TestTempDir::new("allow-write-missing")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+        let missing = home.join("missing");
+
+        let result = resolve_allow_write_paths(&home, std::slice::from_ref(&missing));
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "failed to resolve --allow-write path: {}",
+                missing.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_write_paths_rejects_root_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-write-root")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+
+        let result = resolve_allow_write_paths(&home, &[PathBuf::from("/")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some("--allow-write directory is too broad: /".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_write_paths_rejects_home_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-write-home")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+        let expected_home = canonicalize(&home, "failed to resolve expected home")?;
+
+        let result = resolve_allow_write_paths(&home, &[PathBuf::from("~")]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-write directory is too broad: {}",
+                expected_home.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolve_allow_write_paths_rejects_users_directory() -> Result<()> {
+        let temp = TestTempDir::new("allow-write-users")?;
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home)
+            .wrap_err_with(|| format!("failed to create home directory: {}", home.display()))?;
+        let expected_users_dir = canonicalize(temp.path(), "failed to resolve expected users dir")?;
+
+        let result = resolve_allow_write_paths(&home, &[temp.path().to_path_buf()]);
+
+        assert_eq!(
+            result.err().map(|error| error.to_string()),
+            Some(format!(
+                "--allow-write directory is too broad: {}",
+                expected_users_dir.display()
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn allow_write_project_dir_warnings_reports_redundant_cli_path() {
+        let project_dir = Path::new("/Users/alice/project");
+
+        let actual = allow_write_project_dir_warnings(
+            &[AllowPath::Directory(PathBuf::from("/Users/alice/project"))],
+            project_dir,
+        );
+
+        assert_eq!(
+            actual,
+            vec![
+                "warning: --allow-write /Users/alice/project is the same as $PROJECT_DIR"
+                    .to_owned()
+            ]
+        );
+    }
+
+    #[test]
     fn resolve_allow_read_paths_resolves_relative_directories() -> Result<()> {
         let expected = canonicalize(Path::new("src"), "failed to resolve test directory")?;
 
         let actual = resolve_allow_read_paths(Path::new("/Users/alice"), &[PathBuf::from("src")])?;
 
-        assert_eq!(actual, vec![AllowReadPath::Directory(expected)]);
+        assert_eq!(actual, vec![AllowPath::Directory(expected)]);
         Ok(())
     }
 
@@ -1054,7 +1345,7 @@ allow:
         let actual =
             resolve_allow_read_paths(Path::new("/Users/alice"), &[PathBuf::from("Cargo.toml")])?;
 
-        assert_eq!(actual, vec![AllowReadPath::File(expected)]);
+        assert_eq!(actual, vec![AllowPath::File(expected)]);
         Ok(())
     }
 
@@ -1063,10 +1354,11 @@ allow:
         let actual = compose_import_profile(
             &[PathBuf::from("/profiles/raw.sb")],
             &[
-                AllowReadPath::Directory(PathBuf::from("/Users/alice/docs")),
-                AllowReadPath::File(PathBuf::from("/Users/alice/.zshrc")),
-                AllowReadPath::Directory(PathBuf::from("/Volumes/Shared Stuff")),
+                AllowPath::Directory(PathBuf::from("/Users/alice/docs")),
+                AllowPath::File(PathBuf::from("/Users/alice/.zshrc")),
+                AllowPath::Directory(PathBuf::from("/Volumes/Shared Stuff")),
             ],
+            &[],
         )?;
 
         assert_eq!(
@@ -1077,12 +1369,29 @@ allow:
     }
 
     #[test]
+    fn compose_import_profile_appends_allow_write_paths() -> Result<()> {
+        let actual = compose_import_profile(
+            &[PathBuf::from("/profiles/raw.sb")],
+            &[],
+            &[
+                AllowPath::Directory(PathBuf::from("/Users/alice/dist")),
+                AllowPath::File(PathBuf::from("/Users/alice/output.log")),
+            ],
+        )?;
+
+        assert_eq!(
+            actual,
+            "(version 1)\n\n(import \"/profiles/raw.sb\")\n\n; Additional read/write paths from allow.write/--allow-write\n(allow file-read* file-write*\n    (literal \"/Users/alice/dist\")\n    (subpath \"/Users/alice/dist\")\n    (literal \"/Users/alice/output.log\")\n)\n"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn compose_import_profile_escapes_allow_read_paths() -> Result<()> {
         let actual = compose_import_profile(
             &[PathBuf::from("/profiles/raw.sb")],
-            &[AllowReadPath::File(PathBuf::from(
-                "/Users/alice/quoted\"file",
-            ))],
+            &[AllowPath::File(PathBuf::from("/Users/alice/quoted\"file"))],
+            &[],
         )?;
 
         assert_eq!(

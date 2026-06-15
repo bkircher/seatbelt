@@ -25,6 +25,13 @@ pub struct Cli {
     pub allow_read: Vec<PathBuf>,
 
     #[arg(
+        long = "allow-write",
+        value_name = "PATH",
+        help = "Allow read/write access to an additional file or directory"
+    )]
+    pub allow_write: Vec<PathBuf>,
+
+    #[arg(
         long,
         value_name = "NAME_OR_PATH",
         help = "Use a YAML config by name or path"
@@ -87,6 +94,24 @@ mod tests {
         assert_eq!(
             actual.allow_read,
             vec![PathBuf::from("docs"), PathBuf::from("/opt/shared")]
+        );
+    }
+
+    #[test]
+    fn parses_repeated_allow_write_options() {
+        let actual = Cli::parse_from([
+            "seatbelt",
+            "--allow-write",
+            "dist",
+            "--allow-write",
+            "/opt/output",
+            "run",
+            "true",
+        ]);
+
+        assert_eq!(
+            actual.allow_write,
+            vec![PathBuf::from("dist"), PathBuf::from("/opt/output")]
         );
     }
 }
