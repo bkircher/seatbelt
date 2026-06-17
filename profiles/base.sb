@@ -70,6 +70,11 @@
 (allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))
 (allow file-read-data (literal "/Library/Preferences/com.apple.networkd.plist"))
 
+; Common POSIX startup and network files. On macOS, /etc resolves to /private/etc.
+(allow file-read-data
+    (literal "/private/etc/profile")
+    (literal "/private/etc/hosts"))
+
 ; Baseline
 (deny file-write*)
 (deny default)
