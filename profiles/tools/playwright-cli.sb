@@ -7,6 +7,8 @@
 (define chrome-app "/Applications/Google Chrome.app")
 (define chrome-crashpad-dir
     (string-append home-dir "/Library/Application Support/Google/Chrome/Crashpad"))
+(define playwright-cache-dir
+    (string-append home-dir "/Library/Caches/ms-playwright"))
 
 ; Document the application dependency. base.sb already allows reading
 ; /Applications, but keep this profile self-describing.
@@ -20,6 +22,11 @@
 (allow file-read* file-write* file-read-xattr file-write-xattr
     (literal chrome-crashpad-dir)
     (subpath chrome-crashpad-dir))
+
+; Playwright's daemon writes stderr/stdout logs under this cache tree.
+(allow file-read* file-write*
+    (literal playwright-cache-dir)
+    (subpath playwright-cache-dir))
 
 ; Let playwright-cli / its daemon clean up launched browser child processes.
 (allow signal (target children))
