@@ -28,6 +28,60 @@
     (literal playwright-cache-dir)
     (subpath playwright-cache-dir))
 
+; Let system Google Chrome use the macOS GUI/session services it probes when
+; launched headed by Playwright. Keep the real Chrome profile, cookies, history,
+; and login data unavailable; Playwright should still use a temporary profile
+; under $TMPDIR.
+(allow mach-lookup
+    ; GUI/windowing.
+    (global-name "com.apple.windowserver.active")
+    (global-name "com.apple.windowmanager.server")
+    (global-name "com.apple.CARenderServer")
+    (global-name "com.apple.CoreDisplay.master")
+    (global-name "com.apple.dock.server")
+
+    ; TCC checks. These lookups do not grant camera/mic/etc. permissions by
+    ; themselves; they only let Chrome ask the system service.
+    (global-name "com.apple.tccd")
+    (global-name "com.apple.tccd.system")
+
+    ; LaunchServices/CoreServices startup checks.
+    (global-name "com.apple.CoreServices.coreservicesd")
+    (global-name "com.apple.coreservices.quarantine-resolver")
+    (global-name "com.apple.lsd.mapdb")
+    (global-name "com.apple.lsd.modifydb")
+
+    ; Other observed Chrome desktop probes.
+    (global-name "com.apple.DiskArbitration.diskarbitrationd")
+    (global-name "com.apple.system.opendirectoryd.api")
+
+    ; Clipboard access for browser interactions that use the pasteboard.
+    (global-name "com.apple.pasteboard.1"))
+
+; Observed Chrome power/display probe.
+(allow iokit-open-user-client
+    (iokit-user-client-class "RootDomainUserClient"))
+
+; Crashpad helper handshake is dynamic: helper registers it, Chrome looks it up.
+(allow mach-register mach-lookup
+    (global-name-regex #"^org\.chromium\.crashpad\.child_port_handshake\."))
+
+; Chrome registers a per-process Mach rendezvous service on macOS, and helper
+; processes look it up to connect back to the browser process.
+(allow mach-register mach-lookup
+    (global-name-regex #"^com\.google\.Chrome\.MachPortRendezvousServer\.[0-9]+$"))
+
+(define launchservices-prefs-dir
+    (string-append home-dir "/Library/Preferences/com.apple.LaunchServices"))
+
+(allow file-read*
+    (literal launchservices-prefs-dir)
+    (subpath launchservices-prefs-dir))
+
+; Chrome probes the top-level Library directory during startup.
+(allow file-read-data
+    (literal "/Library"))
+
 ; Let playwright-cli / its daemon clean up launched browser child processes.
 (allow signal (target children))
 
