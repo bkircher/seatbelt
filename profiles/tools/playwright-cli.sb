@@ -1,0 +1,30 @@
+; tools/playwright-cli.sb
+;
+; playwright-cli driving Google Chrome. Chrome should use Playwright's
+; temporary --user-data-dir under $TMPDIR; do not allow the real Chrome
+; profile, cookies, history, or login data.
+
+(define chrome-app "/Applications/Google Chrome.app")
+(define chrome-crashpad-dir
+    (string-append home-dir "/Library/Application Support/Google/Chrome/Crashpad"))
+
+; Document the application dependency. base.sb already allows reading
+; /Applications, but keep this profile self-describing.
+(allow file-read*
+    (literal chrome-app)
+    (subpath chrome-app))
+
+; Observed denial: system Google Chrome touches its Crashpad database even when
+; Playwright launches it with a temporary profile. Crashpad uses extended
+; attributes, so allow those narrowly on the Crashpad tree only.
+(allow file-read* file-write* file-read-xattr file-write-xattr
+    (literal chrome-crashpad-dir)
+    (subpath chrome-crashpad-dir))
+
+; Let playwright-cli / its daemon clean up launched browser child processes.
+(allow signal (target children))
+
+; If close-all / kill-all still hit EPERM for daemonized sessions, consider
+; this broader allowance after confirming it is needed:
+;
+;   (allow signal (target same-sandbox))

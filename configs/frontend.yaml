@@ -6,7 +6,6 @@ profiles:
    - tools/ssh.sb
    - tools/git.sb
    - tools/gh.sb
-   - tools/cargo.sb
-   - tools/python.sb
-   - tools/nvim.sb
+   - tools/node.sb
+   - tools/playwright-cli.sb
    - agents/pi.sb
