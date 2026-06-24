@@ -5,6 +5,8 @@
     (literal project-dir)
     (subpath project-dir))
 
+; Deny writing editor config. If an agent can write those, it can affect what
+; your editor does later, often outside the sandbox.
 (deny file-write*
     (literal (string-append project-dir "/.vscode"))
     (subpath (string-append project-dir "/.vscode"))
