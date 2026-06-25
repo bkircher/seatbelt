@@ -13,7 +13,11 @@ profiles:
    - agents/pi.sb
 
 allow:
+  read:
+    - ~/src/datadog-labs/agent-skills
   env:
     - ATLASSIAN_API_TOKEN
     - ATLASSIAN_EMAIL
     - ATLASSIAN_URL
+    - DD_API_KEY
+    - DD_SITE
