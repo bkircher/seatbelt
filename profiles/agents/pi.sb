@@ -22,6 +22,14 @@
 ; Pi web tools/extensions are checked out separately from the Pi source tree.
 (allow file-read* (subpath (string-append home-dir "/src/pi-web-tools")))
 
+; pi-web-tools' web_fetch implementation shells out to the Obscura headless
+; browser. It is installed by cargo under ~/.cargo/bin, and configs that use Pi
+; should not have to import the broader tools/cargo.sb profile just for this.
+(define cargo-bin-dir (string-append home-dir "/.cargo/bin"))
+(allow file-read*
+    (literal cargo-bin-dir)
+    (literal (string-append cargo-bin-dir "/obscura")))
+
 ; Pi installs agent skills under ~/.pi/agent/skills. This is a symlink for me,
 ; though.
 (allow file-read* file-write*
