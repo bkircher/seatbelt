@@ -16,6 +16,24 @@
     (literal pup-app-support-dir)
     (subpath pup-app-support-dir))
 
+; `pup auth login` shells out to /usr/bin/open to launch the OAuth URL in the
+; user's browser. On current macOS, open talks to LaunchServices/CoreServices
+; through these Mach services and reads the user's LaunchServices preferences.
+(allow mach-lookup
+    (global-name "com.apple.CoreServices.coreservicesd")
+    (global-name "com.apple.coreservices.quarantine-resolver")
+    (global-name "com.apple.lsd.mapdb")
+    (global-name "com.apple.lsd.modifydb")
+    (global-name "com.apple.lsd.open")
+    (global-name "com.apple.DiskArbitration.diskarbitrationd"))
+
+(define launchservices-prefs-dir
+    (string-append home-dir "/Library/Preferences/com.apple.LaunchServices"))
+
+(allow file-read*
+    (literal launchservices-prefs-dir)
+    (subpath launchservices-prefs-dir))
+
 ; macOS Keychain-backed OAuth token storage. Security.framework reads and
 ; writes the user's login keychain directly while adding/updating generic
 ; password items during `pup auth login`/refresh/logout.
