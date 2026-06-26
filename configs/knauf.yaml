@@ -6,6 +6,7 @@ profiles:
    - tools/ssh.sb
    - tools/git.sb
    - tools/gh.sb
+   - tools/pup.sb
    - tools/docker.sb
    - tools/node.sb
    - tools/python.sb
@@ -20,4 +21,5 @@ allow:
     - ATLASSIAN_EMAIL
     - ATLASSIAN_URL
     - DD_API_KEY
+    - DD_APP_KEY
     - DD_SITE

@@ -1,0 +1,36 @@
+; tools/pup.sb
+
+; Datadog pup CLI (https://github.com/DataDog/pup). Pup supports OAuth tokens in
+; the macOS Keychain and fallback API key auth via DD_API_KEY/DD_APP_KEY. It
+; also reads configuration from ~/.config/pup and, on macOS,
+; ~/Library/Application Support/pup.
+(define pup-xdg-config-dir (string-append home-dir "/.config/pup"))
+(define pup-app-support-dir (string-append home-dir "/Library/Application Support/pup"))
+(define user-keychains-dir (string-append home-dir "/Library/Keychains"))
+
+; Pup configuration, session registry, runbooks, and optional file token storage
+; (DD_TOKEN_STORAGE=file).
+(allow file-read* file-write*
+    (literal pup-xdg-config-dir)
+    (subpath pup-xdg-config-dir)
+    (literal pup-app-support-dir)
+    (subpath pup-app-support-dir))
+
+; macOS Keychain-backed OAuth token storage. Security.framework reads and
+; writes the user's login keychain directly while adding/updating generic
+; password items during `pup auth login`/refresh/logout.
+(allow file-read* file-write*
+    (literal user-keychains-dir)
+    (subpath user-keychains-dir))
+
+(allow mach-lookup
+    (global-name "com.apple.SecurityServer")
+    (global-name "com.apple.securityd.xpc"))
+
+; Security.framework observes keychain/database change notifications while
+; checking for stored credentials.
+(allow ipc-posix-shm-read-data ipc-posix-shm-write-data ipc-posix-shm-write-create
+    (ipc-posix-name "com.apple.AppleDatabaseChanged"))
+
+(allow file-read*
+    (regex "^/private/var/db/mds/messages/([0-9]+/)?se_SecurityMessages$"))
