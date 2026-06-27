@@ -8,10 +8,10 @@ policy that applies to the whole process tree.
 
 Agents usually come with a sandboxing mechanism. However, the process you start
 is usually not sandboxed, and both the agent itself and its extensions have to
-adhere to a calling convention in order to have tool calls sandboxed. Thus,
-escaping a sandbox is quite easy for an agent (in theory).
+adhere to a calling convention in order to have tool calls sandboxed. As a
+result, an agent can theoretically escape the sandbox fairly easily.
 
-Example with pi:
+Example using pi:
 
 ```raw
 pi Node.js process       unsandboxed
@@ -96,15 +96,18 @@ run. Path entries must already exist, and broad directories such as `/`,
 
 - Seatbelt is an outer sandbox. It can be used alongside an agent's built-in
   sandbox; the effective access is the intersection of both policies.
-- Run it from a project directory. Seatbelt refuses to run from `$HOME` because
-  that would make the home directory the project boundary.
+- Run it from a project directory. Seatbelt refuses to run from `$HOME` (and
+  other too broad paths) because that would expose everything in it, defeating
+  the purpose.
 - Network access is not a domain-aware firewall. Profiles can deny or broadly
   allow networking, but host-level policy needs a proxy or another tool.
 - macOS only. `sandbox-exec` is deprecated by Apple, but it is still shipped and
   receives security fixes in current macOS releases.
-- Keychain access is allowed so tools such as Git and AWS credential helpers can
-  work. Be aware that sandboxed commands can still perform authenticated
-  actions.
+- Keychain access is allowed in some profiles so tools such as Git, AWS
+  credential helpers, and Datadog pup can work. Be aware that you can combine
+  SBPL profiles into targeted configs for different tasks. This allows you to
+  isolate those tasks from each other, but it requires rigor and a willingness
+  to maintain your profiles.
 
 ## Install
 
