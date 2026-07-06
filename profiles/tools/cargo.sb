@@ -12,9 +12,10 @@
     (literal rustup-dir)
     (subpath rustup-dir))
 
-; LibreSSL/OpenSSL initialization used by Cargo/libgit2 reads this file
+; LibreSSL/OpenSSL initialization used by Cargo/libgit2 reads these files
 (allow file-read-data
-    (literal "/private/etc/ssl/openssl.cnf"))
+    (literal "/private/etc/ssl/openssl.cnf")
+    (literal "/private/etc/ssl/cert.pem"))
 
 (allow mach-lookup (global-name "com.apple.SystemConfiguration.configd"))
 
