@@ -3,6 +3,7 @@
 (define ssh-dir (string-append home-dir "/.ssh"))
 (define ssh-user-config (string-append ssh-dir "/config"))
 (define ssh-known-hosts (string-append ssh-dir "/known_hosts"))
+(define orbstack-ssh-config (string-append home-dir "/.orbstack/ssh/config"))
 
 ; OpenSSH may read user/system client configuration and known_hosts for host key
 ; verification, but the rest of ~/.ssh (private keys, etc.) stays unreadable and
@@ -20,6 +21,10 @@
     (literal ssh-user-config)
     (literal ssh-known-hosts)
     (literal "/private/etc/ssh/ssh_config"))
+
+; Some user configs include OrbStack's generated SSH config.
+(allow file-read-data
+    (literal orbstack-ssh-config))
 
 (deny file-read-data
     (require-all
