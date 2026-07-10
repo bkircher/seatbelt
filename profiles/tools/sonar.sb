@@ -1,0 +1,12 @@
+; sonar.sb
+
+; SonarQube CLI stores authentication and local state under ~/.sonar.
+(define sonar-dir (string-append home-dir "/.sonar"))
+(allow file-read* file-write*
+    (literal sonar-dir)
+    (subpath sonar-dir))
+
+
+; TLS trust store used by the SonarQube CLI HTTP client.
+(allow file-read-data
+    (literal "/private/etc/ssl/cert.pem"))
