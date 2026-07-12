@@ -10,3 +10,14 @@
     (subpath nvim-data-dir)
     (literal nvim-state-dir)
     (subpath nvim-state-dir))
+
+; Neovim reads its configuration and spelling dictionaries from ~/.config.
+; Keep these paths read-only because this profile applies to the entire
+; sandboxed process tree, not only Neovim.
+(define nvim-config-dir (string-append home-dir "/.config/nvim"))
+(define nvim-spelling-dir (string-append home-dir "/.config/spelling"))
+(allow file-read*
+    (literal nvim-config-dir)
+    (subpath nvim-config-dir)
+    (literal nvim-spelling-dir)
+    (subpath nvim-spelling-dir))
