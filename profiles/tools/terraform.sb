@@ -1,0 +1,12 @@
+; tools/terraform.sb
+
+; Terraform stores CLI data such as registry credentials, provider plugins, and
+; optional plugin caches under ~/.terraform.d.
+(define terraform-dir (string-append home-dir "/.terraform.d"))
+(allow file-read* file-write*
+    (literal terraform-dir)
+    (subpath terraform-dir))
+
+; Terraform reads per-user CLI configuration from ~/.terraformrc.
+(allow file-read*
+    (literal (string-append home-dir "/.terraformrc")))
