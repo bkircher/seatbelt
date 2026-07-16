@@ -1,0 +1,15 @@
+; tools/snyk-cli.sb
+
+; Snyk CLI reads authentication and configuration from configstore.
+(define snyk-config-file
+    (string-append home-dir "/.config/configstore/snyk.json"))
+(allow file-read* file-write*
+    (literal snyk-config-file))
+
+; The standalone Snyk CLI launcher stores versioned binaries, lock files, and
+; temporary TLS certificate files in its macOS cache tree.
+(define snyk-cache-dir
+    (string-append home-dir "/Library/Caches/snyk"))
+(allow file-read* file-write*
+    (literal snyk-cache-dir)
+    (subpath snyk-cache-dir))

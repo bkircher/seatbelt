@@ -8,6 +8,7 @@ profiles:
    - tools/gh.sb
    - tools/pup.sb
    - tools/sonar.sb
+   - tools/snyk-cli.sb
    - tools/docker.sb
    - tools/node.sb
    - tools/python.sb
