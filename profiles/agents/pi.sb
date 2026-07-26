@@ -19,7 +19,7 @@
 (allow file-read* (subpath pi-config))
 (allow file-read* (subpath (string-append home-dir "/src/pi")))
 
-; Pi web tools/extensions are checked out separately from the Pi source tree.
+; web_fetch and web_search tools
 (allow file-read* (subpath (string-append home-dir "/src/pi-web-tools")))
 
 ; pi-web-tools' web_fetch implementation shells out to the Obscura headless
@@ -29,6 +29,12 @@
 (allow file-read*
     (literal cargo-bin-dir)
     (literal (string-append cargo-bin-dir "/obscura")))
+
+; /save-md extension
+(define pi-save-md-dir (string-append home-dir "/src/pi-save-md"))
+(allow file-read*
+    (literal pi-save-md-dir)
+    (subpath pi-save-md-dir))
 
 ; Pi installs agent skills under ~/.pi/agent/skills. This is a symlink for me,
 ; though.
@@ -59,3 +65,7 @@
 (allow file-write* (literal (string-append pi-config "/settings.json.lock")))
 (allow file-write* (literal (string-append pi-config "/trust.json.lock")))
 (allow file-write* (literal (string-append pi-config "/auth.json.lock")))
+
+; Pi caches dynamically refreshed provider model catalogs for offline use.
+(allow file-write* (literal (string-append pi-config "/models-store.json")))
+(allow file-write* (literal (string-append pi-config "/models-store.json.lock")))
