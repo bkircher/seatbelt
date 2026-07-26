@@ -1,0 +1,11 @@
+; tools/plannotator.sb
+;
+; Plannotator stores drafts, plans, history, configuration, hooks, sessions,
+; debug logs, and IPC state under ~/.plannotator by default.
+
+(define plannotator-data-dir
+    (string-append home-dir "/.plannotator"))
+
+(allow file-read* file-write*
+    (literal plannotator-data-dir)
+    (subpath plannotator-data-dir))
