@@ -1,0 +1,22 @@
+; tools/open.sb
+;
+; Allow /usr/bin/open to submit files and URLs to LaunchServices. The `lsopen`
+; operation is distinct from the Mach lookups used to contact the service.
+(allow lsopen)
+
+(allow mach-lookup
+    (global-name "com.apple.CoreServices.coreservicesd")
+    (global-name "com.apple.coreservices.quarantine-resolver")
+    (global-name "com.apple.DiskArbitration.diskarbitrationd")
+    (global-name "com.apple.lsd.mapdb")
+    (global-name "com.apple.lsd.modifydb")
+    (global-name "com.apple.lsd.open"))
+
+; LaunchServices reads the user's application associations and related state
+; while resolving which application should handle a file or URL.
+(define launchservices-prefs-dir
+    (string-append home-dir "/Library/Preferences/com.apple.LaunchServices"))
+
+(allow file-read*
+    (literal launchservices-prefs-dir)
+    (subpath launchservices-prefs-dir))
