@@ -11,6 +11,7 @@ profiles:
    - tools/mix.sb
    - tools/nvim.sb
    - agents/pi.sb
+   - tools/plannotator.sb
 
 allow:
   env:

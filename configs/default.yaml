@@ -11,3 +11,4 @@ profiles:
    - tools/python.sb
    - tools/nvim.sb
    - agents/pi.sb
+   - tools/plannotator.sb

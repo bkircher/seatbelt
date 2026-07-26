@@ -9,3 +9,4 @@ profiles:
    - tools/node.sb
    - tools/playwright-cli.sb
    - agents/pi.sb
+   - tools/plannotator.sb
