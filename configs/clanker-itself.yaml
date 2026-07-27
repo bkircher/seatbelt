@@ -4,6 +4,7 @@ profiles:
    - no-docker.sb
    - project.sb
    - tools/git.sb
+   - tools/open.sb
    - tools/cargo.sb
    - tools/node.sb
    - tools/nvim.sb

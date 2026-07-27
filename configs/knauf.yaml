@@ -5,6 +5,7 @@ profiles:
    - knauf.sb
    - tools/ssh.sb
    - tools/git.sb
+   - tools/open.sb
    - tools/gh.sb
    - tools/pup.sb
    - tools/sonar.sb

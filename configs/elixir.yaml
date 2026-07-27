@@ -5,6 +5,7 @@ profiles:
    - project.sb
    - tools/ssh.sb
    - tools/git.sb
+   - tools/open.sb
    - tools/gh.sb
    - tools/cargo.sb
    - tools/python.sb
