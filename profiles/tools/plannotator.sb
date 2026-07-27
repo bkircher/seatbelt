@@ -9,3 +9,6 @@
 (allow file-read* file-write*
     (literal plannotator-data-dir)
     (subpath plannotator-data-dir))
+
+; Plannotator needs to terminate processes when closing annotation sessions
+(allow signal (target children))
