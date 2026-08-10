@@ -53,6 +53,7 @@
 
     ; Other observed Chrome desktop probes.
     (global-name "com.apple.DiskArbitration.diskarbitrationd")
+    (global-name "com.apple.SystemConfiguration.configd")
     (global-name "com.apple.system.opendirectoryd.api")
 
     ; Clipboard access for browser interactions that use the pasteboard.
