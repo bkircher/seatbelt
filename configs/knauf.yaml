@@ -8,6 +8,7 @@ profiles:
    - tools/open.sb
    - tools/gh.sb
    - tools/pup.sb
+   - tools/pas-cli.sb
    - tools/sonar.sb
    - tools/snyk-cli.sb
    - tools/docker.sb
@@ -27,3 +28,5 @@ allow:
     - DD_API_KEY
     - DD_APP_KEY
     - DD_SITE
+    - KNAUF_OKTA_USERNAME
+    - KNAUF_OKTA_PASSWORD

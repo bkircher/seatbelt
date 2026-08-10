@@ -1,0 +1,31 @@
+; tools/pas-cli.sb
+
+; PAS CLI config
+(define pas-config-dir (string-append home-dir "/.config/Knauf-Group/pas"))
+(allow file-read*
+    (literal pas-config-dir)
+    (subpath pas-config-dir))
+
+; PAS is installed as a standalone binary in the user's home directory.
+(define pas-binary (string-append home-dir "/pas"))
+(allow file-read* process-exec
+    (literal pas-binary))
+
+; Allow PAS to read and update the "Knauf-Group Safe Storage" item in the
+; user's login keychain. Keychain item access is mediated by Security.framework;
+; SBPL can grant access to the login keychain database, but cannot restrict that
+; access to an individual keychain item.
+(define pas-user-keychains-dir (string-append home-dir "/Library/Keychains"))
+(allow file-read* file-write*
+    (literal pas-user-keychains-dir)
+    (subpath pas-user-keychains-dir))
+
+(allow mach-lookup
+    (global-name "com.apple.SecurityServer")
+    (global-name "com.apple.securityd.xpc"))
+
+(allow ipc-posix-shm-read-data ipc-posix-shm-write-data ipc-posix-shm-write-create
+    (ipc-posix-name "com.apple.AppleDatabaseChanged"))
+
+(allow file-read*
+    (regex "^/private/var/db/mds/messages/([0-9]+/)?se_SecurityMessages$"))
