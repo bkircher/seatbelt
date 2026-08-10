@@ -9,6 +9,7 @@ profiles:
    - tools/gh.sb
    - tools/node.sb
    - tools/curl.sb
+   - tools/astro.sb
    - tools/playwright-cli.sb
    - agents/pi.sb
    - tools/plannotator.sb

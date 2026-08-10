@@ -1,0 +1,6 @@
+; tools/astro.sb
+
+; Allow Astro to read its configuration file without exposing other files in
+; the same directory.
+(allow file-read*
+    (literal (string-append home-dir "/Library/Preferences/astro/config.json")))
