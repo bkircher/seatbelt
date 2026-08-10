@@ -1,0 +1,5 @@
+; tools/curl.sb
+
+; curl reads this optional per-user config file during startup
+(allow file-read*
+    (literal (string-append home-dir "/.curlrc")))
