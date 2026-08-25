@@ -8,3 +8,10 @@
 (allow file-read* file-write*
     (literal uv-cache-dir)
     (subpath uv-cache-dir))
+
+; pylint cache directory
+(define pylint-cache-dir
+    (string-append home-dir "/Library/Caches/pylint"))
+(allow file-read* file-write*
+    (literal pylint-cache-dir)
+    (subpath pylint-cache-dir))
