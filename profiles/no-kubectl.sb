@@ -1,0 +1,10 @@
+; no-kubectl.sb
+
+; Disallow known kubectl executables. Include the resolved OrbStack target because
+; the user and /usr/local paths can be symbolic links to this target.
+(deny process-exec
+    (literal "/Applications/OrbStack.app/Contents/MacOS/xbin/kubectl")
+    (literal "/usr/local/bin/kubectl")
+    (literal "/opt/homebrew/bin/kubectl")
+    (literal (string-append home-dir "/bin/kubectl"))
+    (literal (string-append home-dir "/.orbstack/bin/kubectl")))

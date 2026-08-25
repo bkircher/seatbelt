@@ -1,6 +1,8 @@
 profiles:
    - base.sb
    - homebrew.sb
+   - no-azure-cli.sb
+   - no-kubectl.sb
    - project.sb
    - knauf.sb
    - tools/ssh.sb

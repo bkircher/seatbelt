@@ -1,0 +1,7 @@
+; no-azure-cli.sb
+
+; Disallow the Homebrew Azure CLI launcher and all files in its installation.
+; This also blocks direct use of its Python modules and interpreter.
+(deny file-read* process-exec
+    (literal "/opt/homebrew/bin/az")
+    (subpath "/opt/homebrew/Cellar/azure-cli"))
