@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EnvName(String);
+pub struct EnvName(String);
 
 impl EnvName {
     pub(crate) fn as_str(&self) -> &str {
@@ -50,7 +50,7 @@ impl std::fmt::Display for EnvName {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 #[error("invalid environment variable name: {name}")]
-pub(crate) struct InvalidEnvName {
+pub struct InvalidEnvName {
     name: String,
 }
 
@@ -68,11 +68,11 @@ fn is_valid_env_name(name: &str) -> bool {
     chars.all(is_ascii_alnum_or_underscore)
 }
 
-fn is_ascii_alpha_or_underscore(character: char) -> bool {
+const fn is_ascii_alpha_or_underscore(character: char) -> bool {
     character == '_' || character.is_ascii_alphabetic()
 }
 
-fn is_ascii_alnum_or_underscore(character: char) -> bool {
+const fn is_ascii_alnum_or_underscore(character: char) -> bool {
     character == '_' || character.is_ascii_alphanumeric()
 }
 

@@ -12,7 +12,7 @@ use crate::{env_name::EnvName, paths::CanonicalPathBuf, profile::SandboxProfile}
 
 const SANDBOX_EXEC_PATH: &str = "/usr/bin/sandbox-exec";
 
-pub(crate) struct SandboxContext<'a> {
+pub struct SandboxContext<'a> {
     pub(crate) profile: &'a SandboxProfile,
     pub(crate) resolved_users_dir: CanonicalPathBuf,
     pub(crate) resolved_home: CanonicalPathBuf,
@@ -20,11 +20,11 @@ pub(crate) struct SandboxContext<'a> {
     pub(crate) resolved_tmpdir: CanonicalPathBuf,
 }
 
-pub(crate) trait EnvSource {
+pub trait EnvSource {
     fn var_os(&self, name: &str) -> Option<OsString>;
 }
 
-pub(crate) struct ProcessEnv;
+pub struct ProcessEnv;
 
 impl EnvSource for ProcessEnv {
     fn var_os(&self, name: &str) -> Option<OsString> {
@@ -32,7 +32,7 @@ impl EnvSource for ProcessEnv {
     }
 }
 
-pub(crate) fn build_final_command(
+pub fn build_final_command(
     sandbox_context: &SandboxContext<'_>,
     env_source: &impl EnvSource,
     allow_env: &[EnvName],
@@ -123,7 +123,7 @@ fn append_if_set(command: &mut Vec<OsString>, env_source: &impl EnvSource, name:
     }
 }
 
-pub(crate) fn exec_command(final_command: &[OsString]) -> Result<()> {
+pub fn exec_command(final_command: &[OsString]) -> Result<()> {
     let (program, args) = final_command
         .split_first()
         .ok_or_else(|| eyre!("internal error: final command is empty"))?;

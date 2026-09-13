@@ -10,7 +10,7 @@ use crate::paths::{CanonicalPathBuf, canonicalize, expand_home_path};
 const OVERLY_BROAD_HOME_SUBDIRECTORIES: &[&str] = &["Documents", "src"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ResolvedAllowPath {
+pub enum ResolvedAllowPath {
     File(CanonicalPathBuf),
     Directory(CanonicalPathBuf),
 }
@@ -24,34 +24,34 @@ impl ResolvedAllowPath {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum AllowAccess {
+pub enum AllowAccess {
     Read,
     Write,
 }
 
 impl AllowAccess {
-    pub(crate) fn option_name(self) -> &'static str {
+    pub(crate) const fn option_name(self) -> &'static str {
         match self {
             Self::Read => "--allow-read",
             Self::Write => "--allow-write",
         }
     }
 
-    pub(crate) fn source_label(self) -> &'static str {
+    pub(crate) const fn source_label(self) -> &'static str {
         match self {
             Self::Read => "allow.read/--allow-read",
             Self::Write => "allow.write/--allow-write",
         }
     }
 
-    pub(crate) fn comment(self) -> &'static str {
+    pub(crate) const fn comment(self) -> &'static str {
         match self {
             Self::Read => "Additional read-only paths from allow.read/--allow-read",
             Self::Write => "Additional read/write paths from allow.write/--allow-write",
         }
     }
 
-    pub(crate) fn sbpl_permissions(self) -> &'static str {
+    pub(crate) const fn sbpl_permissions(self) -> &'static str {
         match self {
             Self::Read => "file-read*",
             Self::Write => "file-read* file-write*",
@@ -59,7 +59,7 @@ impl AllowAccess {
     }
 }
 
-pub(crate) fn resolve_allow_paths(
+pub fn resolve_allow_paths(
     home: &Path,
     paths: &[PathBuf],
     access: AllowAccess,
@@ -114,7 +114,7 @@ fn reject_overly_broad_directories(
     Ok(())
 }
 
-pub(crate) fn is_overly_broad_directory(home: &Path, directory: &Path) -> Result<bool> {
+pub fn is_overly_broad_directory(home: &Path, directory: &Path) -> Result<bool> {
     Ok(broad_directory_paths(home)?
         .iter()
         .any(|broad_directory| directory == broad_directory))
@@ -148,7 +148,7 @@ fn push_existing_broad_directory(paths: &mut Vec<PathBuf>, path: PathBuf) -> Res
     Ok(())
 }
 
-pub(crate) fn project_dir_redundancy_warnings(
+pub fn project_dir_redundancy_warnings(
     access: AllowAccess,
     paths: &[ResolvedAllowPath],
     project_dir: &Path,

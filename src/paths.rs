@@ -7,7 +7,7 @@ use eyre::{Context, Result, bail};
 
 /// Path resolved through `fs::canonicalize` when constructed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CanonicalPathBuf(PathBuf);
+pub struct CanonicalPathBuf(PathBuf);
 
 impl CanonicalPathBuf {
     pub(crate) fn new(path: impl AsRef<Path>, context: &str) -> Result<Self> {
@@ -41,7 +41,7 @@ impl AsRef<Path> for CanonicalPathBuf {
     }
 }
 
-pub(crate) fn expand_home_path(home: &Path, path: &Path) -> PathBuf {
+pub fn expand_home_path(home: &Path, path: &Path) -> PathBuf {
     if path == Path::new("~") {
         return home.to_path_buf();
     }
@@ -53,7 +53,7 @@ pub(crate) fn expand_home_path(home: &Path, path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-pub(crate) fn canonicalize_existing_file(path: &Path, context: &str) -> Result<PathBuf> {
+pub fn canonicalize_existing_file(path: &Path, context: &str) -> Result<PathBuf> {
     if !path.is_file() {
         bail!("{context}: {}", path.display());
     }
@@ -61,6 +61,6 @@ pub(crate) fn canonicalize_existing_file(path: &Path, context: &str) -> Result<P
     canonicalize(path, "failed to resolve file path")
 }
 
-pub(crate) fn canonicalize(path: impl AsRef<Path>, context: &str) -> Result<PathBuf> {
+pub fn canonicalize(path: impl AsRef<Path>, context: &str) -> Result<PathBuf> {
     CanonicalPathBuf::new(path, context).map(CanonicalPathBuf::into_path_buf)
 }

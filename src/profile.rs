@@ -10,12 +10,12 @@ use crate::{
     paths::canonicalize_existing_file,
 };
 
-pub(crate) enum SandboxProfile {
+pub enum SandboxProfile {
     File(PathBuf),
     Text(String),
 }
 
-pub(crate) fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> {
+pub fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Result<String> {
     if profiles.is_empty() {
         bail!("config must contain at least one profile");
     }
@@ -28,7 +28,7 @@ pub(crate) fn compose_profile(profile_root: &Path, profiles: &[PathBuf]) -> Resu
     compose_import_profile(&imports, &[], &[])
 }
 
-pub(crate) fn compose_import_profile(
+pub fn compose_import_profile(
     imports: &[PathBuf],
     allow_read_paths: &[ResolvedAllowPath],
     allow_write_paths: &[ResolvedAllowPath],
@@ -45,7 +45,7 @@ pub(crate) fn compose_import_profile(
     Ok(profile)
 }
 
-pub(crate) fn append_allow_paths(
+pub fn append_allow_paths(
     profile: &mut String,
     allow_paths: &[ResolvedAllowPath],
     access: AllowAccess,
@@ -106,7 +106,7 @@ fn sbpl_string_literal(path: &Path) -> Result<String> {
     ))
 }
 
-pub(crate) fn print_profile(profile: &SandboxProfile) -> Result<()> {
+pub fn print_profile(profile: &SandboxProfile) -> Result<()> {
     match profile {
         SandboxProfile::File(path) => {
             let contents = fs::read_to_string(path)

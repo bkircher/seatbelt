@@ -3,7 +3,7 @@ use std::{
     os::unix::ffi::OsStrExt,
 };
 
-pub(crate) fn shell_words(args: &[OsString]) -> String {
+pub fn shell_words(args: &[OsString]) -> String {
     args.iter()
         .map(|arg| shell_quote(arg.as_os_str()))
         .collect::<Vec<_>>()
@@ -65,7 +65,7 @@ fn push_shell_octal_escape(quoted: &mut String, byte: u8) {
     quoted.push(char::from(b'0' + (byte & 0o7)));
 }
 
-fn is_shell_safe_byte(byte: u8) -> bool {
+const fn is_shell_safe_byte(byte: u8) -> bool {
     matches!(
         byte,
         b'a'..=b'z'

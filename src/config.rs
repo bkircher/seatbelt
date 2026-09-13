@@ -40,14 +40,14 @@ struct AllowConfig {
     write: Vec<PathBuf>,
 }
 
-pub(crate) struct InvocationConfig {
+pub struct InvocationConfig {
     pub(crate) allow_env: Vec<EnvName>,
     pub(crate) profile: SandboxProfile,
     pub(crate) allow_read_paths: Vec<ResolvedAllowPath>,
     pub(crate) allow_write_paths: Vec<ResolvedAllowPath>,
 }
 
-pub(crate) fn load_invocation_config(
+pub fn load_invocation_config(
     home: &Path,
     config_arg: Option<PathBuf>,
     profile_arg: Option<PathBuf>,
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn parses_seatbelt_config_yaml() {
         let config: SeatbeltConfig = must(yaml_serde::from_str(
-            r#"
+            r"
 profiles:
   - base.sb
   - agents/pi.sb
@@ -181,7 +181,7 @@ allow:
   write:
     - dist
     - ~/tmp/output
-"#,
+",
         ));
 
         assert_eq!(

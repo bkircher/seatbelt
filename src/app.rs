@@ -25,7 +25,7 @@ struct RunConfig {
     command: Vec<OsString>,
 }
 
-pub(crate) fn run_cli(cli: cli::Cli) -> Result<()> {
+pub fn run_cli(cli: cli::Cli) -> Result<()> {
     let home = required_env_path("HOME")?;
     let invocation = load_invocation_config(
         &home,
@@ -40,7 +40,7 @@ pub(crate) fn run_cli(cli: cli::Cli) -> Result<()> {
         cli::Command::PrintProfile => {
             print_profile(&invocation.profile).wrap_err("print-profile command failed")
         }
-        cli::Command::Run(run_args) => run(RunConfig {
+        cli::Command::Run(run_args) => run(&RunConfig {
             invocation,
             dry_run: run_args.dry_run,
             command: run_args.command,
@@ -49,7 +49,7 @@ pub(crate) fn run_cli(cli: cli::Cli) -> Result<()> {
     }
 }
 
-fn run(config: RunConfig) -> Result<()> {
+fn run(config: &RunConfig) -> Result<()> {
     let home = required_env_path("HOME")?;
     let resolved_home = CanonicalPathBuf::new(&home, "failed to resolve HOME")?;
     let resolved_users_dir = CanonicalPathBuf::new(
@@ -113,7 +113,7 @@ fn run(config: RunConfig) -> Result<()> {
     exec_command(&final_command)
 }
 
-pub(crate) fn required_env_path(name: &str) -> Result<PathBuf> {
+pub fn required_env_path(name: &str) -> Result<PathBuf> {
     env::var_os(name)
         .map(PathBuf::from)
         .ok_or_else(|| eyre!("required environment variable is not set: {name}"))
