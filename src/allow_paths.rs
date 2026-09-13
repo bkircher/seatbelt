@@ -7,6 +7,8 @@ use eyre::{Context, Result, bail, eyre};
 
 use crate::paths::{CanonicalPathBuf, canonicalize, expand_home_path};
 
+const OVERLY_BROAD_HOME_SUBDIRECTORIES: &[&str] = &["Documents", "src"];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolvedAllowPath {
     File(CanonicalPathBuf),
@@ -100,17 +102,22 @@ fn reject_overly_broad_directories(
     access: AllowAccess,
 ) -> Result<()> {
     let option_name = access.option_name();
-    let broad_directories = broad_directory_paths(home)?;
 
     for path in paths {
         if let ResolvedAllowPath::Directory(path) = path
-            && is_overly_broad_directory(path.as_path(), &broad_directories)
+            && is_overly_broad_directory(home, path.as_path())?
         {
             bail!("{option_name} directory is too broad: {}", path.display());
         }
     }
 
     Ok(())
+}
+
+pub(crate) fn is_overly_broad_directory(home: &Path, directory: &Path) -> Result<bool> {
+    Ok(broad_directory_paths(home)?
+        .iter()
+        .any(|broad_directory| directory == broad_directory))
 }
 
 fn broad_directory_paths(home: &Path) -> Result<Vec<PathBuf>> {
@@ -126,8 +133,9 @@ fn broad_directory_paths(home: &Path) -> Result<Vec<PathBuf>> {
         resolved_users_dir,
         resolved_home.clone(),
     ];
-    push_existing_broad_directory(&mut paths, resolved_home.join("Documents"))?;
-    push_existing_broad_directory(&mut paths, resolved_home.join("src"))?;
+    for subdirectory in OVERLY_BROAD_HOME_SUBDIRECTORIES {
+        push_existing_broad_directory(&mut paths, resolved_home.join(subdirectory))?;
+    }
 
     Ok(paths)
 }
@@ -138,12 +146,6 @@ fn push_existing_broad_directory(paths: &mut Vec<PathBuf>, path: PathBuf) -> Res
     }
 
     Ok(())
-}
-
-fn is_overly_broad_directory(path: &Path, broad_directories: &[PathBuf]) -> bool {
-    broad_directories
-        .iter()
-        .any(|broad_directory| path == broad_directory)
 }
 
 pub(crate) fn project_dir_redundancy_warnings(
@@ -171,6 +173,54 @@ mod tests {
 
     use super::*;
     use crate::{app::required_env_path, test_support::*};
+
+    #[test]
+    fn identifies_overly_broad_directories_and_accepts_a_child_project() {
+        let temp = temp_dir();
+        let home = temp.path().join("home");
+        let documents = home.join("Documents");
+        let src = home.join("src");
+        let project = src.join("project");
+        create_dir_all(&documents);
+        create_dir_all(&project);
+        let resolved_users_dir = canonicalized(temp.path(), "failed to resolve users directory");
+        let resolved_home = canonicalized(&home, "failed to resolve home");
+        let resolved_documents = canonicalized(&documents, "failed to resolve Documents");
+        let resolved_src = canonicalized(&src, "failed to resolve src");
+        let resolved_project = canonicalized(&project, "failed to resolve project");
+
+        let root_is_broad = must(is_overly_broad_directory(
+            resolved_home.as_path(),
+            Path::new("/"),
+        ));
+        let users_dir_is_broad = must(is_overly_broad_directory(
+            resolved_home.as_path(),
+            resolved_users_dir.as_path(),
+        ));
+        let home_is_broad = must(is_overly_broad_directory(
+            resolved_home.as_path(),
+            resolved_home.as_path(),
+        ));
+        let documents_is_broad = must(is_overly_broad_directory(
+            resolved_home.as_path(),
+            resolved_documents.as_path(),
+        ));
+        let src_is_broad = must(is_overly_broad_directory(
+            resolved_home.as_path(),
+            resolved_src.as_path(),
+        ));
+        let project_is_broad = must(is_overly_broad_directory(
+            resolved_home.as_path(),
+            resolved_project.as_path(),
+        ));
+
+        assert!(root_is_broad);
+        assert!(users_dir_is_broad);
+        assert!(home_is_broad);
+        assert!(documents_is_broad);
+        assert!(src_is_broad);
+        assert!(!project_is_broad);
+    }
 
     #[test]
     fn resolve_allow_paths_rejects_write_nonexistent_paths() {

@@ -8,7 +8,7 @@ use std::{
 use eyre::{Context, Result, bail, eyre};
 
 use crate::{
-    allow_paths::{AllowAccess, project_dir_redundancy_warnings},
+    allow_paths::{AllowAccess, is_overly_broad_directory, project_dir_redundancy_warnings},
     cli,
     config::{InvocationConfig, load_invocation_config},
     paths::CanonicalPathBuf,
@@ -68,11 +68,8 @@ fn run(config: RunConfig) -> Result<()> {
         project_dir = CanonicalPathBuf::new(git_root, "failed to resolve Git root")?;
     }
 
-    if project_dir == resolved_home {
-        bail!(
-            "refusing to run from $HOME ({})\n\nRunning from $HOME would grant write access to your entire home directory, defeating the purpose of the sandbox.\n\nInstead, cd into a project directory first:\n  cd ~/my-project && seatbelt run <command>",
-            resolved_home.display()
-        );
+    if is_overly_broad_directory(resolved_home.as_path(), project_dir.as_path())? {
+        bail!("project directory is too broad: {}", project_dir.display());
     }
 
     for warning in project_dir_redundancy_warnings(
