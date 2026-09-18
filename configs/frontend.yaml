@@ -8,6 +8,7 @@ profiles:
    - tools/open.sb
    - tools/gh.sb
    - tools/node.sb
+   - tools/pnpm.sb
    - tools/curl.sb
    - tools/astro.sb
    - tools/playwright-cli.sb

@@ -15,6 +15,7 @@ profiles:
    - tools/snyk-cli.sb
    - tools/docker.sb
    - tools/node.sb
+   - tools/pnpm.sb
    - tools/python.sb
    - tools/cargo.sb
    - tools/nvim.sb

@@ -1,0 +1,23 @@
+; tools/pnpm.sb
+
+; pnpm stores packages, global installations, and global binaries here on
+; macOS.
+(define pnpm-data-dir (string-append home-dir "/Library/pnpm"))
+(allow file-read* file-write*
+    (literal pnpm-data-dir)
+    (subpath pnpm-data-dir))
+
+; pnpm reads its global configuration from this directory on macOS. Keep the
+; configuration read-only so sandboxed processes cannot change future runs.
+(define pnpm-config-dir
+    (string-append home-dir "/Library/Preferences/pnpm"))
+(allow file-read*
+    (literal pnpm-config-dir)
+    (subpath pnpm-config-dir))
+
+; pnpm stores package metadata, dlx packages, and install verification data in
+; its cache. It must be able to update and remove existing cache entries.
+(define pnpm-cache-dir (string-append home-dir "/Library/Caches/pnpm"))
+(allow file-read* file-write*
+    (literal pnpm-cache-dir)
+    (subpath pnpm-cache-dir))
