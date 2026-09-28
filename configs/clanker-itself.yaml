@@ -12,6 +12,8 @@ profiles:
    - tools/plannotator.sb
 
 allow:
+  env:
+    - PI_WEB_SEARCH_DIAGNOSTICS
   read:
     - ~/src/pi
     - ~/src/obscura

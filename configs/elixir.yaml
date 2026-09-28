@@ -17,3 +17,4 @@ profiles:
 allow:
   env:
     - ERL_AFLAGS
+    - PI_WEB_SEARCH_DIAGNOSTICS
