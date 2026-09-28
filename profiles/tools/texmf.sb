@@ -1,0 +1,14 @@
+; Allow TeX Live to create its per-user cache parent if it does not exist.
+(define texlive-dir (string-append home-dir "/.texlive2026"))
+(allow file-write-create (literal texlive-dir))
+
+; LuaTeX needs to read, create, and update files in its font cache.
+(define texmf-cache-dir (string-append texlive-dir "/texmf-var"))
+(allow file-read* file-write*
+    (literal texmf-cache-dir)
+    (subpath texmf-cache-dir))
+
+; LuaTeX scans system fonts when it builds the font database.
+(allow file-read*
+    (literal "/Library/Fonts")
+    (subpath "/Library/Fonts"))

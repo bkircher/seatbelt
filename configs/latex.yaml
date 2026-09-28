@@ -1,0 +1,20 @@
+profiles:
+   - base.sb
+   - homebrew.sb
+   - no-docker.sb
+   - project.sb
+   - tools/git.sb
+   - tools/open.sb
+   - tools/gh.sb
+   - tools/nvim.sb
+   - tools/texmf.sb
+   - agents/pi.sb
+
+allow:
+  read:
+    - ~/Library/Fonts
+  write:
+    - ~/texmf
+    - ~/src/awesome-cv
+  env:
+    - PI_WEB_SEARCH_DIAGNOSTICS
