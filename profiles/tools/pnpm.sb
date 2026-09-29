@@ -21,3 +21,9 @@
 (allow file-read* file-write*
     (literal pnpm-cache-dir)
     (subpath pnpm-cache-dir))
+
+; pnpm changes the mode of its per-user store lock directory in /private/tmp.
+; base.sb permits only reads and file creation there. Limit this mode grant to
+; this account's lock directory (UID 501), not all of shared /private/tmp.
+(allow file-write-mode
+    (literal "/private/tmp/pnpm-store-operation-locks-501"))
