@@ -16,6 +16,7 @@ profiles:
    - tools/docker.sb
    - tools/node.sb
    - tools/pnpm.sb
+   - tools/playwright-cli.sb
    - tools/python.sb
    - tools/cargo.sb
    - tools/nvim.sb
