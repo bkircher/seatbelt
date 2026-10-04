@@ -1,0 +1,10 @@
+; tools/dprint.sb
+
+; dprint updates incremental cache entries by replacing and deleting files.
+; base.sb only allows cache file creation, so allow full access to dprint's
+; cache tree.
+(define dprint-cache-dir
+    (string-append home-dir "/Library/Caches/dprint/cache"))
+(allow file-read* file-write*
+    (literal dprint-cache-dir)
+    (subpath dprint-cache-dir))
