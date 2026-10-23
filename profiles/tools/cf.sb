@@ -1,0 +1,9 @@
+; tools/cf.sb
+
+; Cloudflare CLI configuration, credentials, and state.
+(define cf-config-dir
+    (string-append home-dir "/Library/Preferences/cloudflare"))
+
+(allow file-read* file-write*
+    (literal cf-config-dir)
+    (subpath cf-config-dir))

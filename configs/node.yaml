@@ -8,6 +8,7 @@ profiles:
    - tools/open.sb
    - tools/gh.sb
    - tools/node.sb
+   - tools/cf.sb
    - tools/pnpm.sb
    - tools/dprint.sb
    - tools/curl.sb
