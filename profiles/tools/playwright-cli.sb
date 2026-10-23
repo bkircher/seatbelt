@@ -72,6 +72,10 @@
 (allow mach-register mach-lookup
     (global-name-regex #"^com\.google\.Chrome\.MachPortRendezvousServer\.[0-9]+$"))
 
+; Chrome registers named Mojo channels with a hexadecimal service ID.
+(allow mach-register mach-lookup
+    (global-name-regex #"^com\.google\.Chrome\.apps\.[0-9A-Fa-f]+$"))
+
 (define launchservices-prefs-dir
     (string-append home-dir "/Library/Preferences/com.apple.LaunchServices"))
 
